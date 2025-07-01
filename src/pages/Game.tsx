@@ -91,19 +91,14 @@ const Game = () => {
   const fetchGameState = async () => {
     if (!gameId) return;
 
-    const { data: game, error } = await supabase
+    // Fetch game data
+    const { data: game, error: gameError } = await supabase
       .from('games')
-      .select(`
-        *,
-        game_players (
-          *,
-          profiles (username)
-        )
-      `)
+      .select('*')
       .eq('id', gameId)
       .single();
 
-    if (error) {
+    if (gameError) {
       toast({
         title: "Error",
         description: "Failed to fetch game state",
@@ -112,9 +107,34 @@ const Game = () => {
       return;
     }
 
+    // Fetch game players
+    const { data: gamePlayers, error: playersError } = await supabase
+      .from('game_players')
+      .select('*')
+      .eq('game_id', gameId)
+      .order('turn_order');
+
+    if (playersError) {
+      console.error('Error fetching game players:', playersError);
+    }
+
+    // Fetch player usernames
+    const playerIds = gamePlayers?.map(p => p.player_id) || [];
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, username')
+      .in('id', playerIds);
+
+    // Combine players with their usernames
+    const playersWithUsernames = gamePlayers?.map(player => ({
+      ...player,
+      username: profiles?.find(p => p.id === player.player_id)?.username || 'Unknown'
+    })) || [];
+
     setGameState({
       ...game,
-      players: game.game_players || []
+      players: playersWithUsernames,
+      current_player_turn: 0 // Default to 0 if not set
     });
   };
 
@@ -245,7 +265,7 @@ const Game = () => {
                   >
                     <div className="flex justify-between items-center">
                       <span className="text-white font-medium">
-                        {player.profiles?.username || `Player ${index + 1}`}
+                        {player.username || `Player ${index + 1}`}
                       </span>
                       <span className="text-lg font-bold text-purple-300">
                         {player.score || 0}

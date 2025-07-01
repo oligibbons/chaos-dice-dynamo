@@ -28,14 +28,9 @@ import { useToast } from "@/hooks/use-toast";
 
 interface User {
   id: string;
-  email: string;
+  username: string;
   created_at: string;
-  profiles: {
-    username: string;
-  };
-  user_roles: {
-    role: string;
-  }[];
+  user_role?: string;
 }
 
 interface Game {
@@ -45,9 +40,7 @@ interface Game {
   current_players: number;
   max_players: number;
   created_at: string;
-  profiles: {
-    username: string;
-  };
+  host_username?: string;
 }
 
 const Admin = () => {
@@ -93,42 +86,60 @@ const Admin = () => {
   };
 
   const fetchUsers = async () => {
-    const { data, error } = await supabase
+    // First get profiles
+    const { data: profiles, error: profilesError } = await supabase
       .from('profiles')
-      .select(`
-        id,
-        username,
-        created_at,
-        user_roles (role)
-      `);
+      .select('id, username, created_at');
 
-    if (error) {
-      console.error('Error fetching users:', error);
+    if (profilesError) {
+      console.error('Error fetching profiles:', profilesError);
       return;
     }
 
-    setUsers(data || []);
+    // Then get user roles separately
+    const { data: userRoles, error: rolesError } = await supabase
+      .from('user_roles')
+      .select('user_id, role');
+
+    if (rolesError) {
+      console.error('Error fetching user roles:', rolesError);
+      return;
+    }
+
+    // Combine the data
+    const usersWithRoles = profiles?.map(profile => ({
+      ...profile,
+      user_role: userRoles?.find(role => role.user_id === profile.id)?.role || 'user'
+    })) || [];
+
+    setUsers(usersWithRoles);
   };
 
   const fetchGames = async () => {
-    const { data, error } = await supabase
+    // Get games with host profile info
+    const { data: gamesData, error: gamesError } = await supabase
       .from('games')
-      .select(`
-        id,
-        name,
-        status,
-        current_players,
-        max_players,
-        created_at,
-        profiles (username)
-      `);
+      .select('id, name, status, current_players, max_players, created_at, host_id');
 
-    if (error) {
-      console.error('Error fetching games:', error);
+    if (gamesError) {
+      console.error('Error fetching games:', gamesError);
       return;
     }
 
-    setGames(data || []);
+    // Get host usernames separately
+    const hostIds = gamesData?.map(game => game.host_id) || [];
+    const { data: hostProfiles } = await supabase
+      .from('profiles')
+      .select('id, username')
+      .in('id', hostIds);
+
+    // Combine the data
+    const gamesWithHosts = gamesData?.map(game => ({
+      ...game,
+      host_username: hostProfiles?.find(profile => profile.id === game.host_id)?.username || 'Unknown'
+    })) || [];
+
+    setGames(gamesWithHosts);
   };
 
   const toggleUserRole = async (userId: string, currentRole: string) => {
@@ -263,7 +274,7 @@ const Admin = () => {
               <CardContent className="p-6 text-center">
                 <Crown className="h-8 w-8 text-red-400 mx-auto mb-2" />
                 <div className="text-2xl font-bold text-white">
-                  {users.filter(u => u.user_roles?.some(r => r.role === 'admin')).length}
+                  {users.filter(u => u.user_role === 'admin').length}
                 </div>
                 <div className="text-purple-200 text-sm">Admins</div>
               </CardContent>
@@ -314,34 +325,31 @@ const Admin = () => {
                     >
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-white font-bold">
-                          {user.profiles?.username?.[0]?.toUpperCase() || 'U'}
+                          {user.username?.[0]?.toUpperCase() || 'U'}
                         </div>
                         <div>
                           <div className="text-white font-medium">
-                            {user.profiles?.username || 'Unknown User'}
+                            {user.username || 'Unknown User'}
                           </div>
-                          <div className="text-purple-300 text-sm">{user.email}</div>
+                          <div className="text-purple-300 text-sm">ID: {user.id.slice(0, 8)}...</div>
                         </div>
                       </div>
 
                       <div className="flex items-center gap-2">
                         <Badge 
-                          variant={user.user_roles?.some(r => r.role === 'admin') ? 'destructive' : 'secondary'}
+                          variant={user.user_role === 'admin' ? 'destructive' : 'secondary'}
                           className="capitalize"
                         >
-                          {user.user_roles?.[0]?.role || 'user'}
+                          {user.user_role || 'user'}
                         </Badge>
                         
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => toggleUserRole(
-                            user.id, 
-                            user.user_roles?.[0]?.role || 'user'
-                          )}
+                          onClick={() => toggleUserRole(user.id, user.user_role || 'user')}
                           className="border-purple-500/50 text-purple-200 hover:bg-purple-800/50"
                         >
-                          {user.user_roles?.some(r => r.role === 'admin') ? (
+                          {user.user_role === 'admin' ? (
                             <UserX className="w-4 h-4" />
                           ) : (
                             <UserCheck className="w-4 h-4" />
@@ -370,7 +378,7 @@ const Admin = () => {
                       <div>
                         <div className="text-white font-medium">{game.name}</div>
                         <div className="text-purple-300 text-sm">
-                          Host: {game.profiles?.username} • {game.current_players}/{game.max_players} players
+                          Host: {game.host_username} • {game.current_players}/{game.max_players} players
                         </div>
                       </div>
 
