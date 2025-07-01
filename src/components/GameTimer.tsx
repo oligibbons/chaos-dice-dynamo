@@ -47,15 +47,15 @@ const GameTimer = ({ isActive, onTimeUp, duration = 60 }: GameTimerProps) => {
     <motion.div
       initial={{ opacity: 0, scale: 0.8 }}
       animate={{ opacity: 1, scale: 1 }}
-      className={`fixed top-24 right-4 bg-black/80 backdrop-blur-sm border rounded-lg p-4 z-50 ${
+      className={`bg-black/80 backdrop-blur-sm border rounded-lg p-3 ${
         isUrgent ? 'border-red-500 animate-pulse' : 'border-purple-500/50'
       }`}
     >
       <div className="flex items-center gap-2 mb-2">
         {isUrgent ? (
-          <AlertTriangle className="h-5 w-5 text-red-400" />
+          <AlertTriangle className="h-4 w-4 text-red-400" />
         ) : (
-          <Timer className="h-5 w-5 text-purple-400" />
+          <Timer className="h-4 w-4 text-purple-400" />
         )}
         <span className={`font-bangers text-lg ${isUrgent ? 'text-red-400' : 'text-white'}`}>
           {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}

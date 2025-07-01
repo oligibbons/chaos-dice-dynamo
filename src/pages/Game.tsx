@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Dice1, Dice2, Dice3, Dice4, Dice5, Dice6, Users, Clock, Trophy, LogOut, Crown, Zap, Gamepad2 } from "lucide-react";
+import { Dice1, Dice2, Dice3, Dice4, Dice5, Dice6, Users, Clock, Trophy, LogOut, Crown, Zap, Gamepad2, Sparkles, Star } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -15,6 +15,7 @@ import GameTimer from "@/components/GameTimer";
 import ChaosEventDisplay from "@/components/ChaosEventDisplay";
 import GameNotification from "@/components/GameNotification";
 import PlayerEmotes from "@/components/PlayerEmotes";
+import Dice3D from "@/components/Dice3D";
 
 interface ChaosEvent {
   id: string;
@@ -61,8 +62,16 @@ const Game = () => {
   const [selectedDice, setSelectedDice] = useState<boolean[]>([false, false, false, false, false]);
   const [isMyTurn, setIsMyTurn] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [notification, setNotification] = useState<string | null>(null);
+  const [notification, setNotification] = useState<{
+    id: string;
+    type: 'score' | 'chaos' | 'win' | 'turn' | 'achievement';
+    title: string;
+    message: string;
+    points?: number;
+    player?: string;
+  } | null>(null);
   const [currentPlayerUsername, setCurrentPlayerUsername] = useState<string>('');
+  const [isRolling, setIsRolling] = useState(false);
 
   useEffect(() => {
     if (gameId && user) {
@@ -196,16 +205,22 @@ const Game = () => {
   };
 
   const rollDice = () => {
+    setIsRolling(true);
     const newDice = dice.map((die, index) => 
       selectedDice[index] ? die : Math.floor(Math.random() * 6) + 1
     );
-    setDice(newDice);
-    setRerollCount(prev => prev + 1);
-    soundManager.play('roll');
+    
+    // Simulate rolling animation
+    setTimeout(() => {
+      setDice(newDice);
+      setRerollCount(prev => prev + 1);
+      setIsRolling(false);
+      soundManager.play('roll');
+    }, 1000);
   };
 
   const toggleDiceSelection = (index: number) => {
-    if (rerollCount === 0) return; // Can't select dice before first roll
+    if (rerollCount === 0 || isRolling) return; // Can't select dice before first roll or while rolling
     
     const newSelected = [...selectedDice];
     newSelected[index] = !newSelected[index];
@@ -255,11 +270,22 @@ const Game = () => {
     }
   };
 
+  const handleEmote = (emote: string) => {
+    console.log('Emote sent:', emote);
+    // TODO: Implement emote sending to other players
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen relative overflow-hidden flex items-center justify-center">
         <ChaoticBackground />
-        <div className="text-white text-xl font-quicksand relative z-10">Loading game...</div>
+        <motion.div 
+          animate={{ rotate: 360 }}
+          transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+          className="text-white text-xl font-quicksand relative z-10"
+        >
+          <Sparkles className="h-8 w-8" />
+        </motion.div>
       </div>
     );
   }
@@ -273,43 +299,46 @@ const Game = () => {
     );
   }
 
-  const diceIcons = [Dice1, Dice2, Dice3, Dice4, Dice5, Dice6];
-
   return (
-    <div className="min-h-screen font-quicksand relative overflow-hidden p-4">
+    <div className="min-h-screen font-quicksand relative overflow-hidden">
       <ChaoticBackground />
       
-      <div className="max-w-7xl mx-auto relative z-10">
-        {/* Game Header */}
+      <div className="relative z-10 p-2 sm:p-4 max-w-7xl mx-auto">
+        {/* Mobile-optimized Game Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-6"
+          className="mb-4"
         >
-          <Card className="bg-black/40 border-purple-500/50 backdrop-blur-sm">
-            <CardHeader className="pb-4">
-              <div className="flex justify-between items-center">
-                <div>
-                  <CardTitle className="text-white font-bangers text-2xl flex items-center gap-2">
-                    <Gamepad2 className="text-purple-400" />
-                    {gameState.name}
+          <Card className="bg-black/60 border-purple-400/60 backdrop-blur-md shadow-2xl">
+            <CardHeader className="pb-3 px-3 sm:px-6">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <CardTitle className="text-white font-bangers text-xl sm:text-2xl flex items-center gap-2 truncate">
+                    <motion.div
+                      animate={{ rotate: [0, 360] }}
+                      transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+                    >
+                      <Gamepad2 className="text-purple-400 h-5 w-5 sm:h-6 sm:w-6" />
+                    </motion.div>
+                    <span className="truncate">{gameState.name}</span>
                   </CardTitle>
-                  <CardDescription className="text-purple-200 font-quicksand">
+                  <CardDescription className="text-purple-200 font-quicksand text-sm">
                     Round {gameState.current_round} of {gameState.max_rounds} • {players.length} players
                   </CardDescription>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Badge className="bg-purple-600 text-white font-quicksand">
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <Badge className="bg-gradient-to-r from-purple-600 to-pink-600 text-white font-quicksand border-0 shadow-lg">
                     {gameState.status}
                   </Badge>
                   <Button
                     onClick={leaveGame}
                     variant="outline"
                     size="sm"
-                    className="border-red-500/50 text-red-300 hover:bg-red-800/50 font-quicksand"
+                    className="border-red-400/60 text-red-300 hover:bg-red-800/50 font-quicksand backdrop-blur-sm"
                   >
-                    <LogOut className="w-4 h-4 mr-2" />
-                    Leave
+                    <LogOut className="w-3 h-3 sm:w-4 sm:h-4 sm:mr-2" />
+                    <span className="hidden sm:inline">Leave</span>
                   </Button>
                 </div>
               </div>
@@ -317,95 +346,146 @@ const Game = () => {
           </Card>
         </motion.div>
 
-        <div className="grid lg:grid-cols-3 gap-6">
-          {/* Left Column - Game Board */}
-          <div className="lg:col-span-2 space-y-6">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6">
+          {/* Main Game Area - Takes most space on large screens */}
+          <div className="lg:col-span-8 space-y-4">
             {/* Current Turn & Timer */}
-            <Card className="bg-black/40 border-yellow-500/50 backdrop-blur-sm">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h3 className="text-xl font-bangers text-white">
-                      {isMyTurn ? "Your Turn!" : `${currentPlayerUsername}'s Turn`}
-                    </h3>
-                    <p className="text-yellow-200 font-quicksand">
-                      {isMyTurn ? "Roll the dice and score!" : "Waiting for player..."}
+            <Card className="bg-black/60 border-yellow-400/60 backdrop-blur-md shadow-2xl overflow-hidden">
+              <CardContent className="p-4 sm:p-6">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="flex-1">
+                    <motion.h3 
+                      animate={isMyTurn ? { scale: [1, 1.05, 1] } : {}}
+                      transition={{ duration: 2, repeat: Infinity }}
+                      className="text-xl sm:text-2xl font-bangers text-white mb-2"
+                    >
+                      {isMyTurn ? (
+                        <span className="text-yellow-300 drop-shadow-lg">🎲 Your Turn! 🎲</span>
+                      ) : (
+                        <span>{currentPlayerUsername}'s Turn</span>
+                      )}
+                    </motion.h3>
+                    <p className="text-yellow-200 font-quicksand text-sm sm:text-base">
+                      {isMyTurn ? "Roll the dice and make your mark!" : "Waiting for player..."}
                     </p>
+                    
+                    {isMyTurn && (
+                      <div className="mt-4 space-y-2">
+                        <div className="flex items-center gap-4">
+                          <span className="text-white font-quicksand text-sm">
+                            Rerolls: {rerollCount}/3
+                          </span>
+                          <PlayerEmotes onEmote={handleEmote} disabled={!isMyTurn} />
+                        </div>
+                        <Progress value={(rerollCount / 3) * 100} className="w-full h-2" />
+                      </div>
+                    )}
                   </div>
-                  <GameTimer
-                    isActive={gameState.status === 'active'}
-                    onTimeUp={handleTimeUp}
-                    startTime={gameState.turn_start_time}
-                  />
+                  <div className="flex-shrink-0">
+                    <GameTimer
+                      isActive={gameState.status === 'active' && isMyTurn}
+                      onTimeUp={handleTimeUp}
+                    />
+                  </div>
                 </div>
-                
-                {isMyTurn && (
-                  <div className="space-y-4">
-                    <div className="text-white font-quicksand">
-                      Rerolls: {rerollCount}/3
-                    </div>
-                    <Progress value={(rerollCount / 3) * 100} className="w-full" />
-                  </div>
-                )}
               </CardContent>
             </Card>
 
-            {/* Dice Display */}
-            <Card className="bg-black/40 border-green-500/50 backdrop-blur-sm">
+            {/* Dice Display - The Star of the Show */}
+            <Card className="bg-gradient-to-br from-black/70 to-purple-900/30 border-2 border-pink-400/60 backdrop-blur-md shadow-2xl">
               <CardContent className="p-6">
-                <h3 className="text-xl font-bangers text-white mb-4">Dice</h3>
-                <div className="flex justify-center gap-4 mb-6">
-                  {dice.map((value, index) => {
-                    const DiceIcon = diceIcons[value - 1];
-                    return (
-                      <motion.div
-                        key={index}
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: 0.9 }}
+                <motion.h3 
+                  className="text-2xl sm:text-3xl font-bangers text-white mb-6 text-center"
+                  animate={{ 
+                    textShadow: [
+                      "0 0 10px #ff0080",
+                      "0 0 20px #8000ff",
+                      "0 0 30px #00ff80",
+                      "0 0 20px #8000ff",
+                      "0 0 10px #ff0080"
+                    ]
+                  }}
+                  transition={{ duration: 3, repeat: Infinity }}
+                >
+                  ✨ MAGIC DICE ✨
+                </motion.h3>
+                
+                <div className="flex flex-wrap justify-center gap-3 sm:gap-6 mb-8">
+                  {dice.map((value, index) => (
+                    <motion.div
+                      key={index}
+                      whileHover={!isRolling && isMyTurn ? { scale: 1.1, rotate: 5 } : {}}
+                      whileTap={!isRolling && isMyTurn ? { scale: 0.95 } : {}}
+                      className="relative"
+                    >
+                      <Dice3D
+                        value={value}
+                        isRolling={isRolling}
+                        isSelected={selectedDice[index]}
                         onClick={() => toggleDiceSelection(index)}
-                        className={`
-                          w-16 h-16 rounded-lg border-2 cursor-pointer flex items-center justify-center
-                          ${selectedDice[index] 
-                            ? 'border-yellow-400 bg-yellow-400/20' 
-                            : 'border-green-400/50 bg-green-400/10'
-                          }
-                          ${!isMyTurn ? 'opacity-50 cursor-not-allowed' : ''}
-                        `}
-                      >
-                        <DiceIcon className={`h-8 w-8 ${selectedDice[index] ? 'text-yellow-300' : 'text-green-300'}`} />
-                      </motion.div>
-                    );
-                  })}
+                        size="lg"
+                      />
+                      {selectedDice[index] && !isRolling && (
+                        <motion.div
+                          className="absolute -top-2 -right-2"
+                          animate={{ rotate: 360 }}
+                          transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                        >
+                          <Star className="h-4 w-4 text-yellow-400" />
+                        </motion.div>
+                      )}
+                    </motion.div>
+                  ))}
                 </div>
                 
                 {isMyTurn && rerollCount < 3 && (
                   <div className="text-center">
-                    <Button
-                      onClick={rollDice}
-                      className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 font-bangers text-lg px-8 py-3"
+                    <motion.div
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
                     >
-                      {rerollCount === 0 ? 'Roll Dice!' : 'Reroll Selected'}
-                    </Button>
+                      <Button
+                        onClick={rollDice}
+                        disabled={isRolling}
+                        className="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 font-bangers text-lg px-8 py-4 rounded-xl shadow-lg border-2 border-green-400/50"
+                      >
+                        {isRolling ? (
+                          <motion.div
+                            animate={{ rotate: 360 }}
+                            transition={{ duration: 0.5, repeat: Infinity, ease: "linear" }}
+                            className="flex items-center gap-2"
+                          >
+                            <Sparkles className="h-5 w-5" />
+                            Rolling...
+                          </motion.div>
+                        ) : (
+                          rerollCount === 0 ? '🎲 ROLL DICE! 🎲' : '🔄 REROLL SELECTED'
+                        )}
+                      </Button>
+                    </motion.div>
+                    
+                    {rerollCount > 0 && (
+                      <p className="text-purple-200 font-quicksand mt-2 text-sm">
+                        Click dice to select/deselect before rerolling
+                      </p>
+                    )}
                   </div>
                 )}
               </CardContent>
             </Card>
-
-            {/* Player Emotes */}
-            <PlayerEmotes gameId={gameId!} />
           </div>
 
-          {/* Right Column - Game Info */}
-          <div className="space-y-6">
+          {/* Right Sidebar - Game Info */}
+          <div className="lg:col-span-4 space-y-4">
             {/* Players */}
-            <Card className="bg-black/40 border-blue-500/50 backdrop-blur-sm">
-              <CardHeader>
-                <CardTitle className="text-white font-bangers flex items-center gap-2">
-                  <Users className="text-blue-400" />
+            <Card className="bg-black/60 border-blue-400/60 backdrop-blur-md shadow-2xl">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-white font-bangers flex items-center gap-2 text-lg">
+                  <Users className="text-blue-400 h-5 w-5" />
                   Players
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3">
+              <CardContent className="space-y-2">
                 {players.map((player, index) => (
                   <motion.div
                     key={player.id}
@@ -413,31 +493,40 @@ const Game = () => {
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: index * 0.1 }}
                     className={`
-                      flex items-center justify-between p-3 rounded-lg
+                      flex items-center justify-between p-3 rounded-lg transition-all
                       ${gameState.current_player_turn === index 
-                        ? 'bg-yellow-600/20 border border-yellow-500/50' 
-                        : 'bg-blue-600/10 border border-blue-500/30'
+                        ? 'bg-gradient-to-r from-yellow-600/30 to-orange-600/30 border border-yellow-500/60 shadow-lg' 
+                        : 'bg-blue-600/20 border border-blue-500/40'
                       }
                     `}
                   >
                     <div className="flex items-center gap-3">
-                      <div className={`
-                        w-8 h-8 rounded-full flex items-center justify-center font-bangers text-sm
-                        ${gameState.current_player_turn === index 
-                          ? 'bg-yellow-500 text-black' 
-                          : 'bg-blue-500 text-white'
-                        }
-                      `}>
+                      <motion.div 
+                        className={`
+                          w-8 h-8 rounded-full flex items-center justify-center font-bangers text-sm
+                          ${gameState.current_player_turn === index 
+                            ? 'bg-gradient-to-r from-yellow-500 to-orange-500 text-black shadow-lg' 
+                            : 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white'
+                          }
+                        `}
+                        animate={gameState.current_player_turn === index ? { 
+                          boxShadow: [
+                            "0 0 0 0 rgba(255, 193, 7, 0.7)",
+                            "0 0 0 10px rgba(255, 193, 7, 0)",
+                          ]
+                        } : {}}
+                        transition={{ duration: 1.5, repeat: Infinity }}
+                      >
                         {player.username[0]?.toUpperCase()}
-                      </div>
-                      <span className="text-white font-quicksand font-medium">
+                      </motion.div>
+                      <span className="text-white font-quicksand font-medium text-sm">
                         {player.username}
                         {player.id === user?.id && ' (You)'}
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
                       <Trophy className="h-4 w-4 text-yellow-400" />
-                      <span className="text-white font-bangers">{player.score}</span>
+                      <span className="text-white font-bangers text-sm">{player.score}</span>
                     </div>
                   </motion.div>
                 ))}
@@ -454,7 +543,7 @@ const Game = () => {
       <AnimatePresence>
         {notification && (
           <GameNotification
-            message={notification}
+            notification={notification}
             onClose={() => setNotification(null)}
           />
         )}
