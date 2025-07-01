@@ -1,15 +1,17 @@
-
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Dice1, Dice2, Dice3, Dice4, Dice5, Dice6, Zap, Crown, Timer, Users, RotateCcw, Trophy } from "lucide-react";
+import { Zap, Crown, Timer, Users, RotateCcw, Trophy, Sparkles } from "lucide-react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import Dice3D from "@/components/Dice3D";
+import ChaosEvents from "@/components/ChaosEvents";
+import GameOver from "@/components/GameOver";
 
 interface GameState {
   id: string;
@@ -22,34 +24,6 @@ interface GameState {
   current_player_turn: number;
   host_id: string;
 }
-
-interface DiceProps {
-  value: number;
-  isRolling: boolean;
-  isSelected: boolean;
-  onClick: () => void;
-}
-
-const DiceComponent = ({ value, isRolling, isSelected, onClick }: DiceProps) => {
-  const DiceIcon = [Dice1, Dice2, Dice3, Dice4, Dice5, Dice6][value - 1] || Dice1;
-  
-  return (
-    <motion.div
-      whileHover={{ scale: 1.1 }}
-      whileTap={{ scale: 0.9 }}
-      animate={isRolling ? { rotate: 360 } : { rotate: 0 }}
-      transition={{ duration: isRolling ? 0.5 : 0.2 }}
-      onClick={onClick}
-      className={`cursor-pointer p-4 rounded-xl border-2 transition-all ${
-        isSelected 
-          ? 'border-yellow-400 bg-yellow-400/20 shadow-lg shadow-yellow-400/50' 
-          : 'border-purple-500/50 bg-purple-900/30 hover:border-pink-400/70'
-      }`}
-    >
-      <DiceIcon className={`w-12 h-12 ${isSelected ? 'text-yellow-400' : 'text-white'}`} />
-    </motion.div>
-  );
-};
 
 const Game = () => {
   const { gameId } = useParams();
@@ -64,7 +38,10 @@ const Game = () => {
   const [rollsLeft, setRollsLeft] = useState(3);
   const [isMyTurn, setIsMyTurn] = useState(false);
   const [playerScorecard, setPlayerScorecard] = useState<Record<string, number>>({});
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [gameFinished, setGameFinished] = useState(false);
+  const [finalScores, setFinalScores] = useState<any[]>([]);
+
+  const MAX_TURNS = 5; // Changed to 5 turns instead of 13 rounds
 
   useEffect(() => {
     if (!gameId || !user) {
@@ -144,7 +121,7 @@ const Game = () => {
         return;
       }
 
-      // Fetch player profiles separately
+      // Fetch player profiles
       const playerIds = gamePlayers?.map(p => p.player_id) || [];
       const { data: profiles } = await supabase
         .from('profiles')
@@ -157,14 +134,19 @@ const Game = () => {
         username: profiles?.find(p => p.id === player.player_id)?.username || 'Unknown'
       })) || [];
 
-      // Ensure chaos_events is always an array
+      // Check if game should be finished (5 turns completed)
+      if (game.current_round > MAX_TURNS && game.status !== 'finished') {
+        await finishGame();
+        return;
+      }
+
       const chaosEvents = Array.isArray(game.chaos_events) ? game.chaos_events : [];
 
       const newGameState = {
         id: game.id,
         name: game.name,
         current_round: game.current_round || 1,
-        max_rounds: game.max_rounds || 7,
+        max_rounds: MAX_TURNS,
         status: game.status || 'waiting',
         chaos_events: chaosEvents,
         players: playersWithUsernames,
@@ -178,6 +160,11 @@ const Game = () => {
       const currentPlayer = playersWithUsernames[game.current_player_turn || 0];
       setIsMyTurn(currentPlayer?.player_id === user?.id);
 
+      // Check if game is finished
+      if (game.status === 'finished') {
+        await calculateFinalScores(playersWithUsernames);
+      }
+
     } catch (error) {
       console.error('Error in fetchGameState:', error);
       toast({
@@ -185,6 +172,50 @@ const Game = () => {
         description: "Failed to load game",
         variant: "destructive",
       });
+    }
+  };
+
+  const finishGame = async () => {
+    try {
+      await supabase
+        .from('games')
+        .update({ 
+          status: 'finished',
+          finished_at: new Date().toISOString()
+        })
+        .eq('id', gameId);
+
+      toast({
+        title: "Game Finished!",
+        description: "Calculating final scores...",
+      });
+    } catch (error) {
+      console.error('Error finishing game:', error);
+    }
+  };
+
+  const calculateFinalScores = async (players: any[]) => {
+    try {
+      const scoresPromises = players.map(async (player) => {
+        const { data: scorecard } = await supabase
+          .from('game_scorecards')
+          .select('score')
+          .eq('game_id', gameId)
+          .eq('player_id', player.player_id);
+
+        const totalScore = scorecard?.reduce((sum, item) => sum + item.score, 0) || 0;
+
+        return {
+          ...player,
+          total_score: totalScore
+        };
+      });
+
+      const finalResults = await Promise.all(scoresPromises);
+      setFinalScores(finalResults);
+      setGameFinished(true);
+    } catch (error) {
+      console.error('Error calculating final scores:', error);
     }
   };
 
@@ -218,7 +249,8 @@ const Game = () => {
         .update({ 
           status: 'active',
           started_at: new Date().toISOString(),
-          current_player_turn: 0
+          current_player_turn: 0,
+          current_round: 1
         })
         .eq('id', gameId);
 
@@ -241,26 +273,34 @@ const Game = () => {
     setIsRolling(true);
     setRollsLeft(prev => prev - 1);
 
-    // Simulate dice rolling animation
-    const rollInterval = setInterval(() => {
+    // Animate dice rolling with multiple intermediate values
+    const rollDuration = 1000;
+    const rollInterval = 100;
+    const rollSteps = rollDuration / rollInterval;
+    
+    let step = 0;
+    const rollTimer = setInterval(() => {
+      step++;
       setCurrentDice(dice => dice.map((_, index) => 
         selectedDice[index] ? dice[index] : Math.floor(Math.random() * 6) + 1
       ));
-    }, 100);
 
-    setTimeout(() => {
-      clearInterval(rollInterval);
-      setIsRolling(false);
-      
-      // Final roll
-      setCurrentDice(dice => dice.map((_, index) => 
-        selectedDice[index] ? dice[index] : Math.floor(Math.random() * 6) + 1
-      ));
-    }, 1000);
+      if (step >= rollSteps) {
+        clearInterval(rollTimer);
+        setIsRolling(false);
+        
+        // Final roll with dramatic effect
+        setTimeout(() => {
+          setCurrentDice(dice => dice.map((_, index) => 
+            selectedDice[index] ? dice[index] : Math.floor(Math.random() * 6) + 1
+          ));
+        }, 100);
+      }
+    }, rollInterval);
   };
 
   const toggleDiceSelection = (index: number) => {
-    if (rollsLeft === 3 || !isMyTurn) return; // Can't select dice before first roll
+    if (rollsLeft === 3 || !isMyTurn) return;
     
     setSelectedDice(prev => {
       const newSelected = [...prev];
@@ -343,7 +383,6 @@ const Game = () => {
       setRollsLeft(3);
       setSelectedDice([false, false, false, false, false]);
       setCurrentDice([1, 2, 3, 4, 5]);
-      setSelectedCategory(null);
 
       toast({
         title: "Score Recorded!",
@@ -363,13 +402,17 @@ const Game = () => {
   if (!gameState) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-900 via-indigo-900 to-pink-900 flex items-center justify-center">
-        <div className="text-white text-xl">Loading game...</div>
+        <div className="font-quicksand text-white text-xl">Loading game...</div>
       </div>
     );
   }
 
+  if (gameFinished) {
+    return <GameOver gameId={gameId!} players={finalScores} />;
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-indigo-900 to-pink-900 p-4">
+    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-indigo-900 to-pink-900 p-4 font-quicksand">
       <div className="max-w-7xl mx-auto">
         {/* Game Header */}
         <motion.div
@@ -377,21 +420,22 @@ const Game = () => {
           animate={{ opacity: 1, y: 0 }}
           className="text-center mb-6"
         >
-          <h1 className="text-4xl font-bold text-white mb-2 flex items-center justify-center gap-2">
+          <h1 className="font-bangers text-6xl text-white mb-2 flex items-center justify-center gap-2">
             <Crown className="text-yellow-400" />
             {gameState.name}
             <Crown className="text-yellow-400" />
           </h1>
           <div className="flex justify-center items-center gap-4 text-purple-200">
-            <Badge variant="secondary" className="bg-purple-800/50">
-              Round {gameState.current_round}/{gameState.max_rounds}
+            <Badge variant="secondary" className="bg-purple-800/50 font-quicksand">
+              Turn {gameState.current_round}/{gameState.max_rounds}
             </Badge>
-            <Badge variant="secondary" className="bg-purple-800/50">
+            <Badge variant="secondary" className="bg-purple-800/50 font-quicksand">
               <Users className="w-4 h-4 mr-1" />
               {gameState.players.length} Players
             </Badge>
             {gameState.status === 'waiting' && gameState.host_id === user?.id && (
-              <Button onClick={startGame} className="bg-green-600 hover:bg-green-700">
+              <Button onClick={startGame} className="bg-green-600 hover:bg-green-700 font-quicksand font-semibold">
+                <Sparkles className="w-4 h-4 mr-2" />
                 Start Game
               </Button>
             )}
@@ -399,13 +443,13 @@ const Game = () => {
         </motion.div>
 
         <div className="grid lg:grid-cols-3 gap-6">
-          {/* Left Panel - Players & Scores */}
+          {/* Left Panel - Players & Chaos */}
           <div className="space-y-4">
             <Card className="bg-black/40 border-purple-500/50 backdrop-blur-sm">
               <CardHeader>
-                <CardTitle className="text-white flex items-center gap-2">
+                <CardTitle className="font-bangers text-white flex items-center gap-2">
                   <Users className="text-purple-400" />
-                  Players
+                  PLAYERS
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -418,17 +462,17 @@ const Game = () => {
                       key={player.id}
                       className={`p-3 rounded-lg border transition-all ${
                         isCurrentTurn
-                          ? 'border-yellow-400 bg-yellow-400/20 shadow-lg'
+                          ? 'border-yellow-400 bg-yellow-400/20 shadow-lg animate-pulse'
                           : 'border-purple-500/30 bg-purple-900/20'
                       }`}
                     >
                       <div className="flex justify-between items-center">
-                        <span className="text-white font-medium flex items-center gap-2">
+                        <span className="font-quicksand text-white font-medium flex items-center gap-2">
                           {player.player_id === gameState.host_id && <Crown className="h-4 w-4 text-yellow-400" />}
                           {player.username || `Player ${index + 1}`}
                           {isCurrentTurn && <Timer className="h-4 w-4 text-yellow-400" />}
                         </span>
-                        <span className="text-lg font-bold text-purple-300">
+                        <span className="font-bangers text-2xl text-purple-300">
                           {player.player_id === user?.id ? totalScore : (player.score || 0)}
                         </span>
                       </div>
@@ -443,29 +487,17 @@ const Game = () => {
             </Card>
 
             {/* Chaos Events */}
-            {gameState.chaos_events && gameState.chaos_events.length > 0 && (
-              <Card className="bg-black/40 border-red-500/50 backdrop-blur-sm">
-                <CardHeader>
-                  <CardTitle className="text-white flex items-center gap-2">
-                    <Zap className="text-red-400" />
-                    Active Chaos
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {gameState.chaos_events.map((event, index) => (
-                    <motion.div
-                      key={index}
-                      initial={{ scale: 0 }}
-                      animate={{ scale: 1 }}
-                      className="p-3 bg-red-900/20 border border-red-500/30 rounded-lg mb-2"
-                    >
-                      <h4 className="text-red-300 font-semibold">{event.name}</h4>
-                      <p className="text-red-200 text-sm">{event.description}</p>
-                    </motion.div>
-                  ))}
-                </CardContent>
-              </Card>
-            )}
+            <ChaosEvents 
+              gameId={gameId!} 
+              currentTurn={gameState.current_round} 
+              onChaosTriggered={(event) => {
+                toast({
+                  title: "🔥 CHAOS EVENT! 🔥",
+                  description: event.name,
+                  variant: "destructive",
+                });
+              }}
+            />
           </div>
 
           {/* Center Panel - Dice & Actions */}
@@ -473,26 +505,27 @@ const Game = () => {
             {gameState.status === 'active' && (
               <Card className="bg-black/40 border-purple-500/50 backdrop-blur-sm">
                 <CardHeader>
-                  <CardTitle className="text-white text-center flex items-center justify-center gap-2">
+                  <CardTitle className="font-bangers text-white text-center flex items-center justify-center gap-2">
                     <Timer className="text-blue-400" />
-                    {isMyTurn ? 'Your Turn' : `${gameState.players[gameState.current_player_turn]?.username || 'Player'}'s Turn`}
+                    {isMyTurn ? 'YOUR TURN!' : `${gameState.players[gameState.current_player_turn]?.username || 'Player'}'S TURN`}
                     {isMyTurn && (
-                      <Badge className="ml-2 bg-blue-600">
+                      <Badge className="ml-2 bg-blue-600 font-quicksand">
                         {rollsLeft} rolls left
                       </Badge>
                     )}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {/* Dice Grid */}
-                  <div className="grid grid-cols-5 gap-4 mb-6">
+                  {/* 3D Dice Grid */}
+                  <div className="grid grid-cols-5 gap-4 mb-6 justify-center">
                     {currentDice.map((value, index) => (
-                      <DiceComponent
+                      <Dice3D
                         key={index}
                         value={value}
                         isRolling={isRolling}
                         isSelected={selectedDice[index]}
                         onClick={() => toggleDiceSelection(index)}
+                        size="lg"
                       />
                     ))}
                   </div>
@@ -506,10 +539,10 @@ const Game = () => {
                       <Button
                         onClick={rollDice}
                         disabled={rollsLeft <= 0 || isRolling}
-                        className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-bold py-3 text-lg"
+                        className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-bangers text-2xl py-4"
                       >
                         <RotateCcw className="mr-2" />
-                        {isRolling ? 'Rolling...' : rollsLeft > 0 ? `Roll Dice (${rollsLeft} left)` : 'Choose Category'}
+                        {isRolling ? 'ROLLING...' : rollsLeft > 0 ? `ROLL DICE (${rollsLeft} LEFT)` : 'CHOOSE CATEGORY'}
                       </Button>
                     </motion.div>
                   )}
@@ -521,8 +554,8 @@ const Game = () => {
               <Card className="bg-black/40 border-purple-500/50 backdrop-blur-sm">
                 <CardContent className="p-8 text-center">
                   <Timer className="h-16 w-16 text-purple-400 mx-auto mb-4 opacity-50" />
-                  <p className="text-purple-200 text-lg mb-2">Waiting for players...</p>
-                  <p className="text-purple-300">Game will start when the host is ready!</p>
+                  <p className="font-quicksand text-purple-200 text-lg mb-2">Waiting for players...</p>
+                  <p className="font-quicksand text-purple-300">Game will start when the host is ready!</p>
                 </CardContent>
               </Card>
             )}
@@ -532,9 +565,9 @@ const Game = () => {
           <div>
             <Card className="bg-black/40 border-purple-500/50 backdrop-blur-sm">
               <CardHeader>
-                <CardTitle className="text-white flex items-center gap-2">
+                <CardTitle className="font-bangers text-white flex items-center gap-2">
                   <Trophy className="text-yellow-400" />
-                  Your Scorecard
+                  YOUR SCORECARD
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
@@ -550,7 +583,7 @@ const Game = () => {
                   { key: 'fullHouse', label: 'Full House', desc: '25 points' },
                   { key: 'smallStraight', label: 'Small Straight', desc: '30 points' },
                   { key: 'largeStraight', label: 'Large Straight', desc: '40 points' },
-                  { key: 'chaos', label: 'Chaos', desc: '75 points' },
+                  { key: 'chaos', label: 'CHAOS', desc: '75 points' },
                   { key: 'chance', label: 'Chance', desc: 'Sum of all dice' },
                 ].map((category) => {
                   const hasScored = playerScorecard[category.key] !== undefined;
@@ -564,7 +597,7 @@ const Game = () => {
                       whileTap={canScore ? { scale: 0.98 } : {}}
                       onClick={() => canScore && scoreCategory(category.key)}
                       disabled={!canScore}
-                      className={`w-full p-3 text-left rounded-lg border transition-all ${
+                      className={`w-full p-3 text-left rounded-lg border transition-all font-quicksand ${
                         hasScored 
                           ? 'border-green-500/50 bg-green-900/20' 
                           : canScore
@@ -574,14 +607,16 @@ const Game = () => {
                     >
                       <div className="flex justify-between items-center">
                         <div>
-                          <div className="text-white font-medium">{category.label}</div>
+                          <div className={`text-white font-medium ${category.key === 'chaos' ? 'font-bangers text-lg text-red-400' : ''}`}>
+                            {category.label}
+                          </div>
                           <div className="text-purple-300 text-sm">{category.desc}</div>
                         </div>
                         <div className="text-lg font-bold">
                           {hasScored ? (
-                            <span className="text-green-400">{playerScorecard[category.key]}</span>
+                            <span className="text-green-400 font-bangers text-xl">{playerScorecard[category.key]}</span>
                           ) : canScore ? (
-                            <span className="text-yellow-400">{potentialScore}</span>
+                            <span className="text-yellow-400 font-bangers text-xl">{potentialScore}</span>
                           ) : (
                             <span className="text-gray-500">-</span>
                           )}
@@ -593,8 +628,8 @@ const Game = () => {
                 
                 <div className="mt-4 pt-4 border-t border-purple-500/30">
                   <div className="flex justify-between items-center text-lg font-bold">
-                    <span className="text-white">Total Score:</span>
-                    <span className="text-yellow-400">
+                    <span className="font-quicksand text-white">Total Score:</span>
+                    <span className="font-bangers text-2xl text-yellow-400">
                       {Object.values(playerScorecard).reduce((sum, score) => sum + score, 0)}
                     </span>
                   </div>

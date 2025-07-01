@@ -249,7 +249,7 @@ const Lobby = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 p-4">
+    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 p-4 font-quicksand">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <motion.div 
@@ -259,11 +259,11 @@ const Lobby = () => {
         >
           <div className="flex items-center gap-3">
             <Dice1 className="text-purple-400 h-8 w-8" />
-            <h1 className="text-3xl font-bold text-white">DieNamic Lobby</h1>
+            <h1 className="font-bangers text-5xl text-white">DieNamic Lobby</h1>
           </div>
           <div className="flex items-center gap-4">
-            <span className="text-purple-200">Welcome, {userProfile?.username || 'Player'}!</span>
-            <Button onClick={handleLogout} variant="outline" size="sm" className="border-purple-500/50 text-purple-200">
+            <span className="text-purple-200 font-quicksand">Welcome, {userProfile?.username || 'Player'}!</span>
+            <Button onClick={handleLogout} variant="outline" size="sm" className="border-purple-500/50 text-purple-200 font-quicksand">
               <LogOut className="h-4 w-4 mr-2" />
               Logout
             </Button>
@@ -278,7 +278,7 @@ const Lobby = () => {
         >
           <Card className="mb-6 bg-black/50 border-purple-500/50 backdrop-blur-sm">
             <CardHeader>
-              <CardTitle className="text-white flex items-center gap-2">
+              <CardTitle className="font-bangers text-white flex items-center gap-2 text-2xl">
                 <Plus className="h-5 w-5" />
                 Create New Game
               </CardTitle>
@@ -289,12 +289,12 @@ const Lobby = () => {
                   placeholder="Enter room name..."
                   value={newRoomName}
                   onChange={(e) => setNewRoomName(e.target.value)}
-                  className="bg-purple-900/30 border-purple-500/50 text-white flex-1"
+                  className="bg-purple-900/30 border-purple-500/50 text-white flex-1 font-quicksand"
                   onKeyPress={(e) => e.key === 'Enter' && createRoom()}
                 />
                 <Button 
                   onClick={createRoom} 
-                  className="bg-purple-600 hover:bg-purple-700"
+                  className="bg-purple-600 hover:bg-purple-700 font-quicksand font-semibold"
                   disabled={loading || !newRoomName.trim()}
                 >
                   {loading ? 'Creating...' : 'Create Room'}
@@ -316,15 +316,15 @@ const Lobby = () => {
               <Card className="bg-black/50 border-purple-500/30 backdrop-blur-sm hover:border-purple-400/50 transition-all hover:scale-105">
                 <CardHeader>
                   <div className="flex justify-between items-start">
-                    <CardTitle className="text-white text-lg flex items-center gap-2">
+                    <CardTitle className="font-bangers text-white text-xl flex items-center gap-2">
                       {room.host_id === user?.id && <Crown className="h-4 w-4 text-yellow-400" />}
                       {room.name}
                     </CardTitle>
-                    <Badge className={`${getStatusColor(room.status)} text-white`}>
+                    <Badge className={`${getStatusColor(room.status)} text-white font-quicksand`}>
                       {room.status}
                     </Badge>
                   </div>
-                  <CardDescription className="text-purple-200">
+                  <CardDescription className="text-purple-200 font-quicksand">
                     Host: {room.host_username} • {room.current_players}/{room.max_players} players
                   </CardDescription>
                 </CardHeader>
@@ -341,7 +341,7 @@ const Lobby = () => {
                   <Button
                     onClick={() => joinRoom(room.id)}
                     disabled={room.current_players >= room.max_players || room.status !== 'waiting' || loading}
-                    className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+                    className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2 font-quicksand font-semibold"
                   >
                     <Play className="h-4 w-4" />
                     {room.status === 'active' ? 'Join Game' : room.current_players >= room.max_players ? 'Room Full' : 'Join Game'}
@@ -361,8 +361,8 @@ const Lobby = () => {
             <Card className="bg-black/30 border-purple-500/30 backdrop-blur-sm">
               <CardContent className="p-8 text-center">
                 <Dice1 className="h-16 w-16 text-purple-400 mx-auto mb-4 opacity-50" />
-                <p className="text-purple-200 text-lg mb-2">No games available</p>
-                <p className="text-purple-300">Create a new room to start playing!</p>
+                <p className="text-purple-200 text-lg mb-2 font-quicksand">No games available</p>
+                <p className="text-purple-300 font-quicksand">Create a new room to start playing!</p>
               </CardContent>
             </Card>
           </motion.div>
