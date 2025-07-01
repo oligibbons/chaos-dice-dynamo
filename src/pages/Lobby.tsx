@@ -42,24 +42,44 @@ const Lobby = () => {
       fetchUserProfile();
       fetchRooms();
       
-      // Set up real-time subscription for games
+      // Set up real-time subscription for games with better error handling
       const gameChannel = supabase
-        .channel('lobby-games')
+        .channel('public-lobby-updates')
         .on('postgres_changes', 
-          { event: '*', schema: 'public', table: 'games' },
-          () => {
-            console.log('Games table changed, refetching...');
+          { 
+            event: '*', 
+            schema: 'public', 
+            table: 'games',
+            filter: 'is_private=eq.false'
+          },
+          (payload) => {
+            console.log('Games table changed:', payload);
             fetchRooms();
           }
         )
         .on('postgres_changes',
-          { event: '*', schema: 'public', table: 'game_players' },
-          () => {
-            console.log('Game players table changed, refetching...');
+          { 
+            event: '*', 
+            schema: 'public', 
+            table: 'game_players'
+          },
+          (payload) => {
+            console.log('Game players table changed:', payload);
             fetchRooms();
           }
         )
-        .subscribe();
+        .subscribe((status) => {
+          console.log('Lobby subscription status:', status);
+          if (status === 'SUBSCRIBED') {
+            console.log('Successfully subscribed to lobby updates');
+          } else if (status === 'CHANNEL_ERROR') {
+            console.error('Error subscribing to lobby updates');
+            // Try to resubscribe after a delay
+            setTimeout(() => {
+              fetchRooms();
+            }, 2000);
+          }
+        });
 
       return () => {
         supabase.removeChannel(gameChannel);
@@ -70,13 +90,18 @@ const Lobby = () => {
   const fetchUserProfile = async () => {
     if (!user) return;
 
-    const { data } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
-      .single();
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
 
-    setUserProfile(data);
+      if (error) throw error;
+      setUserProfile(data);
+    } catch (error) {
+      console.error('Error fetching user profile:', error);
+    }
   };
 
   const fetchRooms = async () => {
@@ -103,27 +128,23 @@ const Lobby = () => {
       const hostIds = [...new Set(games.map(g => g.host_id))];
       
       // Fetch host profiles
-      const { data: hostProfiles } = await supabase
+      const { data: hostProfiles, error: profilesError } = await supabase
         .from('profiles')
         .select('id, username')
         .in('id', hostIds);
 
-      // Fetch actual player counts for each game
-      const gameIds = games.map(g => g.id);
-      const { data: playerCounts } = await supabase
-        .from('game_players')
-        .select('game_id, player_id')
-        .in('game_id', gameIds);
+      if (profilesError) {
+        console.error('Error fetching host profiles:', profilesError);
+      }
 
       const roomsWithPlayerInfo = games.map(game => {
-        const actualPlayerCount = playerCounts?.filter(p => p.game_id === game.id).length || 0;
         const hostProfile = hostProfiles?.find(p => p.id === game.host_id);
         
         return {
           id: game.id,
           name: game.name,
           host_id: game.host_id,
-          current_players: actualPlayerCount,
+          current_players: game.current_players || 0,
           max_players: game.max_players || 4,
           status: game.status as 'waiting' | 'active' | 'finished',
           created_at: game.created_at,
@@ -135,6 +156,11 @@ const Lobby = () => {
       setRooms(roomsWithPlayerInfo);
     } catch (error) {
       console.error('Error in fetchRooms:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load game rooms",
+        variant: "destructive",
+      });
     }
   };
 
@@ -205,12 +231,14 @@ const Lobby = () => {
 
     try {
       // Check if user is already in the game
-      const { data: existingPlayer } = await supabase
+      const { data: existingPlayer, error: checkError } = await supabase
         .from('game_players')
         .select('id')
         .eq('game_id', roomId)
         .eq('player_id', user.id)
-        .single();
+        .maybeSingle();
+
+      if (checkError) throw checkError;
 
       if (existingPlayer) {
         // User is already in the game, just navigate
@@ -219,10 +247,12 @@ const Lobby = () => {
       }
 
       // Get current player count
-      const { count } = await supabase
+      const { count, error: countError } = await supabase
         .from('game_players')
         .select('*', { count: 'exact', head: true })
         .eq('game_id', roomId);
+
+      if (countError) throw countError;
 
       const playerCount = count || 0;
 
@@ -237,7 +267,7 @@ const Lobby = () => {
         return;
       }
 
-      // Add player to the game
+      // Add player to the game (trigger will update current_players automatically)
       const { error } = await supabase
         .from('game_players')
         .insert({
@@ -249,13 +279,11 @@ const Lobby = () => {
 
       if (error) throw error;
 
-      // Update game player count is handled by trigger, but we can update it manually for consistency
-      await supabase
-        .from('games')
-        .update({ current_players: playerCount + 1 })
-        .eq('id', roomId);
-
       navigate(`/game/${roomId}/setup`);
+      toast({
+        title: "Joined Game!",
+        description: "Successfully joined the game",
+      });
     } catch (error: any) {
       console.error('Error joining room:', error);
       toast({

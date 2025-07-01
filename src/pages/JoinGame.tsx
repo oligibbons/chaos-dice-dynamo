@@ -30,9 +30,11 @@ const JoinGame = () => {
         .select('*')
         .eq('game_code', gameCode.toUpperCase())
         .eq('status', 'waiting')
-        .single();
+        .maybeSingle();
 
-      if (gameError || !game) {
+      if (gameError) throw gameError;
+
+      if (!game) {
         toast({
           title: "Invalid Code",
           description: "Game not found or no longer accepting players",
@@ -42,12 +44,14 @@ const JoinGame = () => {
       }
 
       // Check if user is already in the game
-      const { data: existingPlayer } = await supabase
+      const { data: existingPlayer, error: playerCheckError } = await supabase
         .from('game_players')
         .select('id')
         .eq('game_id', game.id)
         .eq('player_id', user.id)
-        .single();
+        .maybeSingle();
+
+      if (playerCheckError) throw playerCheckError;
 
       if (existingPlayer) {
         navigate(`/game/${game.id}/setup`);
@@ -55,10 +59,12 @@ const JoinGame = () => {
       }
 
       // Check if game is full
-      const { count } = await supabase
+      const { count, error: countError } = await supabase
         .from('game_players')
         .select('*', { count: 'exact', head: true })
         .eq('game_id', game.id);
+
+      if (countError) throw countError;
 
       if ((count || 0) >= (game.max_players || 4)) {
         toast({
@@ -69,7 +75,7 @@ const JoinGame = () => {
         return;
       }
 
-      // Add player to the game
+      // Add player to the game (trigger will update current_players automatically)
       const { error } = await supabase
         .from('game_players')
         .insert({
@@ -80,12 +86,6 @@ const JoinGame = () => {
         });
 
       if (error) throw error;
-
-      // Update game player count
-      await supabase
-        .from('games')
-        .update({ current_players: (count || 0) + 1 })
-        .eq('id', game.id);
 
       navigate(`/game/${game.id}/setup`);
       toast({

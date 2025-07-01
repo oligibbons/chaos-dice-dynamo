@@ -71,7 +71,17 @@ const GameSetup = () => {
           fetchPlayers();
         })
         .subscribe((status) => {
-          console.log('Real-time subscription status:', status);
+          console.log('Game setup subscription status:', status);
+          if (status === 'SUBSCRIBED') {
+            console.log('Successfully subscribed to game setup updates');
+          } else if (status === 'CHANNEL_ERROR') {
+            console.error('Error subscribing to game setup updates');
+            // Retry after delay
+            setTimeout(() => {
+              fetchGameData();
+              fetchPlayers();
+            }, 2000);
+          }
         });
 
       return () => {
@@ -174,6 +184,11 @@ const GameSetup = () => {
       }
     } catch (error) {
       console.error('Error fetching players:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load players",
+        variant: "destructive",
+      });
     }
   };
 
@@ -264,6 +279,11 @@ const GameSetup = () => {
       setMaxRounds(rounds);
     } catch (error) {
       console.error('Error updating max rounds:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update game settings",
+        variant: "destructive",
+      });
     }
   };
 
@@ -271,11 +291,14 @@ const GameSetup = () => {
     if (!user || !gameId) return;
     
     try {
-      await supabase
+      // Delete player record (trigger will update current_players automatically)
+      const { error } = await supabase
         .from('game_players')
         .delete()
         .eq('game_id', gameId)
         .eq('player_id', user.id);
+
+      if (error) throw error;
 
       navigate('/lobby');
       toast({
@@ -284,6 +307,11 @@ const GameSetup = () => {
       });
     } catch (error) {
       console.error('Error leaving game:', error);
+      toast({
+        title: "Error",
+        description: "Failed to leave game",
+        variant: "destructive",
+      });
     }
   };
 

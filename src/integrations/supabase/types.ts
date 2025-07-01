@@ -280,6 +280,10 @@ export type Database = {
         Args: { game_uuid: string }
         Returns: boolean
       }
+      cleanup_inactive_players: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
       has_role: {
         Args: {
           _user_id: string
