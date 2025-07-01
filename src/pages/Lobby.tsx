@@ -152,7 +152,8 @@ const Lobby = () => {
         .insert({
           game_id: game.id,
           player_id: user.id,
-          turn_order: 0
+          turn_order: 0,
+          is_ready: true // Host is automatically ready
         });
 
       if (playerError) throw playerError;
@@ -163,7 +164,7 @@ const Lobby = () => {
         description: "Game room created successfully!",
       });
 
-      navigate(`/game/${game.id}`);
+      navigate(`/game/${game.id}/setup`);
     } catch (error: any) {
       console.error('Error creating room:', error);
       toast({
@@ -192,7 +193,7 @@ const Lobby = () => {
 
       if (existingPlayer) {
         // User is already in the game, just navigate
-        navigate(`/game/${roomId}`);
+        navigate(`/game/${roomId}/setup`);
         return;
       }
 
@@ -210,7 +211,8 @@ const Lobby = () => {
         .insert({
           game_id: roomId,
           player_id: user.id,
-          turn_order: playerCount
+          turn_order: playerCount,
+          is_ready: false
         });
 
       if (error) throw error;
@@ -221,7 +223,7 @@ const Lobby = () => {
         .update({ current_players: playerCount + 1 })
         .eq('id', roomId);
 
-      navigate(`/game/${roomId}`);
+      navigate(`/game/${roomId}/setup`);
     } catch (error: any) {
       console.error('Error joining room:', error);
       toast({
@@ -263,6 +265,15 @@ const Lobby = () => {
           </div>
           <div className="flex items-center gap-4">
             <span className="text-purple-200 font-quicksand">Welcome, {userProfile?.username || 'Player'}!</span>
+            <Button 
+              onClick={() => navigate('/join-game')}
+              variant="outline" 
+              size="sm" 
+              className="border-blue-500/50 text-blue-200 font-quicksand"
+            >
+              <Users className="h-4 w-4 mr-2" />
+              Join Game
+            </Button>
             <Button onClick={handleLogout} variant="outline" size="sm" className="border-purple-500/50 text-purple-200 font-quicksand">
               <LogOut className="h-4 w-4 mr-2" />
               Logout
@@ -340,11 +351,11 @@ const Lobby = () => {
                   </div>
                   <Button
                     onClick={() => joinRoom(room.id)}
-                    disabled={room.current_players >= room.max_players || room.status !== 'waiting' || loading}
+                    disabled={room.current_players >= room.max_players || loading}
                     className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2 font-quicksand font-semibold"
                   >
                     <Play className="h-4 w-4" />
-                    {room.status === 'active' ? 'Join Game' : room.current_players >= room.max_players ? 'Room Full' : 'Join Game'}
+                    {room.current_players >= room.max_players ? 'Room Full' : 'Join Setup'}
                   </Button>
                 </CardContent>
               </Card>

@@ -1,4 +1,3 @@
-
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -11,6 +10,8 @@ import SoundManagerComponent from "@/components/SoundManager";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Lobby from "./pages/Lobby";
+import JoinGame from "./pages/JoinGame";
+import GameSetup from "./pages/GameSetup";
 import Game from "./pages/Game";
 import Settings from "./pages/Settings";
 import Admin from "./pages/Admin";
@@ -36,6 +37,16 @@ const App = () => (
               <Route path="/lobby" element={
                 <ProtectedRoute>
                   <Lobby />
+                </ProtectedRoute>
+              } />
+              <Route path="/join-game" element={
+                <ProtectedRoute>
+                  <JoinGame />
+                </ProtectedRoute>
+              } />
+              <Route path="/game/:gameId/setup" element={
+                <ProtectedRoute>
+                  <GameSetup />
                 </ProtectedRoute>
               } />
               <Route path="/game/:gameId" element={
