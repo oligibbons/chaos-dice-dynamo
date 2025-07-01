@@ -1,10 +1,9 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Zap, Skull, Star, Sparkles } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { useSoundManager } from "@/components/SoundManager";
+import ChaosEventDisplay from "./ChaosEventDisplay";
 
 interface ChaosEvent {
   id: string;
@@ -23,16 +22,19 @@ interface ChaosEventsProps {
 
 const ChaosEvents = ({ gameId, currentTurn, onChaosTriggered }: ChaosEventsProps) => {
   const [activeEvents, setActiveEvents] = useState<ChaosEvent[]>([]);
-  const [triggeredEvent, setTriggeredEvent] = useState<ChaosEvent | null>(null);
+  const [availableEvents, setAvailableEvents] = useState<ChaosEvent[]>([]);
+  const soundManager = useSoundManager();
 
   useEffect(() => {
     fetchChaosEvents();
-    
-    // Random chance to trigger chaos event each turn
-    if (Math.random() < 0.3) { // 30% chance
-      triggerRandomChaosEvent();
+  }, []);
+
+  useEffect(() => {
+    // Trigger chaos events at the start of each new turn
+    if (currentTurn > 1) {
+      triggerTurnChaosEvents();
     }
-  }, [currentTurn]);
+  }, [currentTurn, availableEvents]);
 
   const fetchChaosEvents = async () => {
     try {
@@ -42,32 +44,47 @@ const ChaosEvents = ({ gameId, currentTurn, onChaosTriggered }: ChaosEventsProps
         .eq('active', true);
 
       if (events) {
-        // Properly type the events to match our ChaosEvent interface
         const typedEvents: ChaosEvent[] = events.map(event => ({
           ...event,
           rarity: (event.rarity as 'common' | 'rare' | 'legendary') || 'common'
         }));
-        setActiveEvents(typedEvents);
+        setAvailableEvents(typedEvents);
       }
     } catch (error) {
       console.error('Error fetching chaos events:', error);
     }
   };
 
-  const triggerRandomChaosEvent = async () => {
-    if (activeEvents.length === 0) return;
+  const triggerTurnChaosEvents = async () => {
+    if (availableEvents.length === 0) return;
 
-    // Weighted random selection based on rarity
-    const weightedEvents = activeEvents.flatMap(event => {
-      const weight = event.rarity === 'legendary' ? 1 : event.rarity === 'rare' ? 3 : 6;
-      return Array(weight).fill(event);
-    });
+    // Determine number of chaos events (1-4, with 2-3 being most common)
+    const numEventsRoll = Math.random();
+    let numEvents: number;
+    if (numEventsRoll < 0.17) numEvents = 1;
+    else if (numEventsRoll < 0.5) numEvents = 2;
+    else if (numEventsRoll < 0.83) numEvents = 3;
+    else numEvents = 4;
 
-    const randomEvent = weightedEvents[Math.floor(Math.random() * weightedEvents.length)];
-    
-    setTriggeredEvent(randomEvent);
-    
-    // Apply chaos event to game
+    // Select random events based on rarity weights
+    const selectedEvents: ChaosEvent[] = [];
+    for (let i = 0; i < numEvents && i < availableEvents.length; i++) {
+      const weightedEvents = availableEvents
+        .filter(event => !selectedEvents.find(selected => selected.id === event.id))
+        .flatMap(event => {
+          const weight = event.rarity === 'legendary' ? 1 : event.rarity === 'rare' ? 3 : 6;
+          return Array(weight).fill(event);
+        });
+
+      if (weightedEvents.length > 0) {
+        const randomEvent = weightedEvents[Math.floor(Math.random() * weightedEvents.length)];
+        selectedEvents.push(randomEvent);
+      }
+    }
+
+    setActiveEvents(selectedEvents);
+
+    // Apply chaos events to game
     try {
       const { data: game } = await supabase
         .from('games')
@@ -76,113 +93,33 @@ const ChaosEvents = ({ gameId, currentTurn, onChaosTriggered }: ChaosEventsProps
         .single();
 
       const currentEvents = Array.isArray(game?.chaos_events) ? game.chaos_events : [];
-      const updatedEvents = [...currentEvents, {
-        ...randomEvent,
+      const updatedEvents = selectedEvents.map(event => ({
+        ...event,
         triggered_at: new Date().toISOString(),
         turn_triggered: currentTurn
-      }];
+      }));
 
       await supabase
         .from('games')
-        .update({ chaos_events: updatedEvents })
+        .update({ 
+          chaos_events: [...currentEvents, ...updatedEvents]
+        })
         .eq('id', gameId);
 
-      onChaosTriggered?.(randomEvent);
+      // Notify about each chaos event
+      selectedEvents.forEach((event, index) => {
+        setTimeout(() => {
+          onChaosTriggered?.(event);
+          soundManager.play('chaos', 0.6);
+        }, index * 1000);
+      });
+
     } catch (error) {
-      console.error('Error applying chaos event:', error);
-    }
-
-    // Clear triggered event after 3 seconds
-    setTimeout(() => setTriggeredEvent(null), 3000);
-  };
-
-  const getRarityIcon = (rarity: string) => {
-    switch (rarity) {
-      case 'legendary': return <Star className="h-4 w-4 text-yellow-400" />;
-      case 'rare': return <Sparkles className="h-4 w-4 text-purple-400" />;
-      default: return <Zap className="h-4 w-4 text-blue-400" />;
+      console.error('Error applying chaos events:', error);
     }
   };
 
-  const getRarityColor = (rarity: string) => {
-    switch (rarity) {
-      case 'legendary': return 'bg-yellow-600';
-      case 'rare': return 'bg-purple-600';
-      default: return 'bg-blue-600';
-    }
-  };
-
-  return (
-    <>
-      <AnimatePresence>
-        {triggeredEvent && (
-          <motion.div
-            initial={{ scale: 0, rotate: -180 }}
-            animate={{ scale: 1, rotate: 0 }}
-            exit={{ scale: 0, rotate: 180 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
-          >
-            <Card className="bg-black/80 border-red-500/50 backdrop-blur-sm animate-chaos-pulse max-w-md mx-4">
-              <CardHeader className="text-center">
-                <CardTitle className="font-bangers text-3xl text-red-400 flex items-center justify-center gap-2">
-                  <Skull className="h-8 w-8" />
-                  CHAOS UNLEASHED!
-                  <Skull className="h-8 w-8" />
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="text-center">
-                <div className="flex items-center justify-center gap-2 mb-4">
-                  {getRarityIcon(triggeredEvent.rarity)}
-                  <h3 className="font-quicksand font-bold text-xl text-white">
-                    {triggeredEvent.name}
-                  </h3>
-                  <Badge className={`${getRarityColor(triggeredEvent.rarity)} text-white`}>
-                    {triggeredEvent.rarity}
-                  </Badge>
-                </div>
-                <p className="font-quicksand text-gray-200">
-                  {triggeredEvent.description}
-                </p>
-              </CardContent>
-            </Card>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {activeEvents.length > 0 && (
-        <Card className="bg-black/40 border-red-500/50 backdrop-blur-sm">
-          <CardHeader>
-            <CardTitle className="font-bangers text-white flex items-center gap-2">
-              <Zap className="text-red-400" />
-              CHAOS ZONE
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {activeEvents.slice(0, 3).map((event) => (
-              <motion.div
-                key={event.id}
-                className="p-2 bg-red-900/20 border border-red-500/30 rounded-lg"
-                whileHover={{ scale: 1.02 }}
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  {getRarityIcon(event.rarity)}
-                  <h4 className="font-quicksand font-semibold text-red-300 text-sm">
-                    {event.name}
-                  </h4>
-                  <Badge className={`${getRarityColor(event.rarity)} text-white text-xs`}>
-                    {event.rarity}
-                  </Badge>
-                </div>
-                <p className="font-quicksand text-red-200 text-xs">
-                  {event.description}
-                </p>
-              </motion.div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
-    </>
-  );
+  return <ChaosEventDisplay events={activeEvents} />;
 };
 
 export default ChaosEvents;
