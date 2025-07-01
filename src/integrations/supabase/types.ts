@@ -9,16 +9,149 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      [_ in never]: never
+      game_players: {
+        Row: {
+          game_id: string
+          id: string
+          joined_at: string | null
+          player_id: string
+          score: number | null
+          scorecard: Json | null
+          turn_order: number
+        }
+        Insert: {
+          game_id: string
+          id?: string
+          joined_at?: string | null
+          player_id: string
+          score?: number | null
+          scorecard?: Json | null
+          turn_order: number
+        }
+        Update: {
+          game_id?: string
+          id?: string
+          joined_at?: string | null
+          player_id?: string
+          score?: number | null
+          scorecard?: Json | null
+          turn_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "game_players_game_id_fkey"
+            columns: ["game_id"]
+            isOneToOne: false
+            referencedRelation: "games"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      games: {
+        Row: {
+          chaos_events: Json | null
+          created_at: string | null
+          current_players: number | null
+          current_round: number | null
+          finished_at: string | null
+          host_id: string
+          id: string
+          max_players: number | null
+          max_rounds: number | null
+          name: string
+          started_at: string | null
+          status: string | null
+        }
+        Insert: {
+          chaos_events?: Json | null
+          created_at?: string | null
+          current_players?: number | null
+          current_round?: number | null
+          finished_at?: string | null
+          host_id: string
+          id?: string
+          max_players?: number | null
+          max_rounds?: number | null
+          name: string
+          started_at?: string | null
+          status?: string | null
+        }
+        Update: {
+          chaos_events?: Json | null
+          created_at?: string | null
+          current_players?: number | null
+          current_round?: number | null
+          finished_at?: string | null
+          host_id?: string
+          id?: string
+          max_players?: number | null
+          max_rounds?: number | null
+          name?: string
+          started_at?: string | null
+          status?: string | null
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string | null
+          id: string
+          updated_at: string | null
+          username: string | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string | null
+          id: string
+          updated_at?: string | null
+          username?: string | null
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string | null
+          id?: string
+          updated_at?: string | null
+          username?: string | null
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          created_at: string | null
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _user_id: string
+          _role: Database["public"]["Enums"]["app_role"]
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "moderator" | "user"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -133,6 +266,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "moderator", "user"],
+    },
   },
 } as const
