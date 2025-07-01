@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -71,30 +70,43 @@ const Lobby = () => {
 
   const fetchRooms = async () => {
     try {
-      // Fetch games with host information
-      const { data: games, error } = await supabase
+      // Fetch games
+      const { data: games, error: gamesError } = await supabase
         .from('games')
-        .select(`
-          *,
-          profiles!games_host_id_fkey(username)
-        `)
+        .select('*')
         .in('status', ['waiting', 'active'])
         .order('created_at', { ascending: false });
 
-      if (error) {
-        console.error('Error fetching games:', error);
+      if (gamesError) {
+        console.error('Error fetching games:', gamesError);
         return;
       }
 
+      if (!games || games.length === 0) {
+        setRooms([]);
+        return;
+      }
+
+      // Get unique host IDs
+      const hostIds = [...new Set(games.map(g => g.host_id))];
+      
+      // Fetch host profiles
+      const { data: hostProfiles } = await supabase
+        .from('profiles')
+        .select('id, username')
+        .in('id', hostIds);
+
       // Fetch player counts for each game
-      const gameIds = games?.map(g => g.id) || [];
+      const gameIds = games.map(g => g.id);
       const { data: playerCounts } = await supabase
         .from('game_players')
         .select('game_id, player_id')
         .in('game_id', gameIds);
 
-      const roomsWithPlayerInfo = games?.map(game => {
+      const roomsWithPlayerInfo = games.map(game => {
         const playerCount = playerCounts?.filter(p => p.game_id === game.id).length || 0;
+        const hostProfile = hostProfiles?.find(p => p.id === game.host_id);
+        
         return {
           id: game.id,
           name: game.name,
@@ -103,9 +115,9 @@ const Lobby = () => {
           max_players: game.max_players || 4,
           status: game.status as 'waiting' | 'active' | 'finished',
           created_at: game.created_at,
-          host_username: game.profiles?.username || 'Unknown'
+          host_username: hostProfile?.username || 'Unknown'
         };
-      }) || [];
+      });
 
       setRooms(roomsWithPlayerInfo);
     } catch (error) {
