@@ -42,7 +42,12 @@ const ChaosEvents = ({ gameId, currentTurn, onChaosTriggered }: ChaosEventsProps
         .eq('active', true);
 
       if (events) {
-        setActiveEvents(events);
+        // Properly type the events to match our ChaosEvent interface
+        const typedEvents: ChaosEvent[] = events.map(event => ({
+          ...event,
+          rarity: (event.rarity as 'common' | 'rare' | 'legendary') || 'common'
+        }));
+        setActiveEvents(typedEvents);
       }
     } catch (error) {
       console.error('Error fetching chaos events:', error);

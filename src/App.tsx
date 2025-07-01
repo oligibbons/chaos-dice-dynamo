@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import NavBar from "@/components/NavBar";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Lobby from "./pages/Lobby";
@@ -23,27 +24,30 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
-          <Routes>
-            <Route path="/" element={<Index />} />
-            <Route path="/auth" element={<Auth />} />
-            <Route path="/lobby" element={
-              <ProtectedRoute>
-                <Lobby />
-              </ProtectedRoute>
-            } />
-            <Route path="/game/:gameId" element={
-              <ProtectedRoute>
-                <Game />
-              </ProtectedRoute>
-            } />
-            <Route path="/admin" element={
-              <ProtectedRoute>
-                <Admin />
-              </ProtectedRoute>
-            } />
-            <Route path="/confirmation" element={<Confirmation />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+          <NavBar />
+          <div className="pt-16">
+            <Routes>
+              <Route path="/" element={<Index />} />
+              <Route path="/auth" element={<Auth />} />
+              <Route path="/lobby" element={
+                <ProtectedRoute>
+                  <Lobby />
+                </ProtectedRoute>
+              } />
+              <Route path="/game/:gameId" element={
+                <ProtectedRoute>
+                  <Game />
+                </ProtectedRoute>
+              } />
+              <Route path="/admin" element={
+                <ProtectedRoute>
+                  <Admin />
+                </ProtectedRoute>
+              } />
+              <Route path="/confirmation" element={<Confirmation />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </div>
         </BrowserRouter>
       </TooltipProvider>
     </AuthProvider>

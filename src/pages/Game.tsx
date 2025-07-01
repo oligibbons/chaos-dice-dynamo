@@ -41,7 +41,7 @@ const Game = () => {
   const [gameFinished, setGameFinished] = useState(false);
   const [finalScores, setFinalScores] = useState<any[]>([]);
 
-  const MAX_TURNS = 5; // Changed to 5 turns instead of 13 rounds
+  const MAX_TURNS = 5; // 5 turns instead of 13 rounds
 
   useEffect(() => {
     if (!gameId || !user) {
@@ -516,8 +516,8 @@ const Game = () => {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {/* 3D Dice Grid */}
-                  <div className="grid grid-cols-5 gap-4 mb-6 justify-center">
+                  {/* 3D Dice Grid - Fixed spacing */}
+                  <div className="flex justify-center gap-2 mb-6">
                     {currentDice.map((value, index) => (
                       <Dice3D
                         key={index}
@@ -525,7 +525,7 @@ const Game = () => {
                         isRolling={isRolling}
                         isSelected={selectedDice[index]}
                         onClick={() => toggleDiceSelection(index)}
-                        size="lg"
+                        size="md"
                       />
                     ))}
                   </div>
