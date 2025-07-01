@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from "@/components/ui/button";
@@ -91,51 +90,69 @@ const Game = () => {
   const fetchGameState = async () => {
     if (!gameId) return;
 
-    // Fetch game data
-    const { data: game, error: gameError } = await supabase
-      .from('games')
-      .select('*')
-      .eq('id', gameId)
-      .single();
+    try {
+      // Fetch game data
+      const { data: game, error: gameError } = await supabase
+        .from('games')
+        .select('*')
+        .eq('id', gameId)
+        .single();
 
-    if (gameError) {
+      if (gameError) {
+        toast({
+          title: "Error",
+          description: "Failed to fetch game state",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Fetch game players
+      const { data: gamePlayers, error: playersError } = await supabase
+        .from('game_players')
+        .select('*')
+        .eq('game_id', gameId)
+        .order('turn_order');
+
+      if (playersError) {
+        console.error('Error fetching game players:', playersError);
+        return;
+      }
+
+      // Fetch player profiles separately
+      const playerIds = gamePlayers?.map(p => p.player_id) || [];
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, username')
+        .in('id', playerIds);
+
+      // Combine players with their usernames
+      const playersWithUsernames = gamePlayers?.map(player => ({
+        ...player,
+        username: profiles?.find(p => p.id === player.player_id)?.username || 'Unknown'
+      })) || [];
+
+      // Ensure chaos_events is always an array
+      const chaosEvents = Array.isArray(game.chaos_events) ? game.chaos_events : [];
+
+      setGameState({
+        id: game.id,
+        name: game.name,
+        current_round: game.current_round || 1,
+        max_rounds: game.max_rounds || 7,
+        status: game.status || 'waiting',
+        chaos_events: chaosEvents,
+        players: playersWithUsernames,
+        current_player_turn: 0 // Default to 0 if not set
+      });
+    } catch (error) {
+      console.error('Error in fetchGameState:', error);
       toast({
         title: "Error",
-        description: "Failed to fetch game state",
+        description: "Failed to load game",
         variant: "destructive",
       });
-      return;
     }
-
-    // Fetch game players
-    const { data: gamePlayers, error: playersError } = await supabase
-      .from('game_players')
-      .select('*')
-      .eq('game_id', gameId)
-      .order('turn_order');
-
-    if (playersError) {
-      console.error('Error fetching game players:', playersError);
-    }
-
-    // Fetch player usernames
-    const playerIds = gamePlayers?.map(p => p.player_id) || [];
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('id, username')
-      .in('id', playerIds);
-
-    // Combine players with their usernames
-    const playersWithUsernames = gamePlayers?.map(player => ({
-      ...player,
-      username: profiles?.find(p => p.id === player.player_id)?.username || 'Unknown'
-    })) || [];
-
-    setGameState({
-      ...game,
-      players: playersWithUsernames,
-      current_player_turn: 0 // Default to 0 if not set
-    });
   };
 
   const rollDice = () => {
