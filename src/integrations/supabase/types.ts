@@ -176,6 +176,7 @@ export type Database = {
           game_code: string | null
           host_id: string
           id: string
+          is_private: boolean | null
           max_players: number | null
           max_rounds: number | null
           name: string
@@ -193,6 +194,7 @@ export type Database = {
           game_code?: string | null
           host_id: string
           id?: string
+          is_private?: boolean | null
           max_players?: number | null
           max_rounds?: number | null
           name: string
@@ -210,6 +212,7 @@ export type Database = {
           game_code?: string | null
           host_id?: string
           id?: string
+          is_private?: boolean | null
           max_players?: number | null
           max_rounds?: number | null
           name?: string

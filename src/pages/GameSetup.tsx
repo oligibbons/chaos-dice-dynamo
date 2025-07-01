@@ -49,7 +49,7 @@ const GameSetup = () => {
     if (gameId && user) {
       fetchGameData();
       
-      // Subscribe to real-time updates
+      // Subscribe to real-time updates with better error handling
       const gameChannel = supabase
         .channel(`game-setup-${gameId}`)
         .on('postgres_changes', {
@@ -57,7 +57,8 @@ const GameSetup = () => {
           schema: 'public',
           table: 'games',
           filter: `id=eq.${gameId}`
-        }, () => {
+        }, (payload) => {
+          console.log('Game updated:', payload);
           fetchGameData();
         })
         .on('postgres_changes', {
@@ -65,10 +66,13 @@ const GameSetup = () => {
           schema: 'public',
           table: 'game_players',
           filter: `game_id=eq.${gameId}`
-        }, () => {
+        }, (payload) => {
+          console.log('Game players updated:', payload);
           fetchPlayers();
         })
-        .subscribe();
+        .subscribe((status) => {
+          console.log('Real-time subscription status:', status);
+        });
 
       return () => {
         supabase.removeChannel(gameChannel);
@@ -123,7 +127,7 @@ const GameSetup = () => {
         }
       }
       
-      fetchPlayers();
+      await fetchPlayers();
     } catch (error) {
       console.error('Error fetching game:', error);
       toast({
@@ -319,7 +323,7 @@ const GameSetup = () => {
             onClick={leaveGame}
             variant="outline"
             size="sm"
-            className="border-red-400/60 text-red-300 hover:bg-red-800/50 font-quicksand"
+            className="border-red-400/60 text-red-300 hover:bg-red-800/50 hover:text-red-200 font-quicksand"
           >
             <LogOut className="w-4 h-4 mr-2" />
             Leave
@@ -355,7 +359,7 @@ const GameSetup = () => {
                     <Button
                       onClick={copyGameCode}
                       size="sm"
-                      className="bg-yellow-600 hover:bg-yellow-700 font-quicksand"
+                      className="bg-yellow-600 hover:bg-yellow-700 text-white font-quicksand"
                     >
                       <Copy className="h-4 w-4" />
                     </Button>
@@ -415,7 +419,7 @@ const GameSetup = () => {
                       <Button
                         onClick={startGame}
                         disabled={!canStartGame}
-                        className="bg-green-600 hover:bg-green-700 font-bangers text-xl px-8 py-4 rounded-xl"
+                        className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:text-gray-300 text-white font-bangers text-xl px-8 py-4 rounded-xl"
                       >
                         <Play className="h-6 w-6 mr-2" />
                         START GAME!
@@ -430,7 +434,7 @@ const GameSetup = () => {
                     <div className="text-center">
                       <Button
                         onClick={toggleReady}
-                        className={`font-bangers text-xl px-8 py-4 rounded-xl ${
+                        className={`font-bangers text-xl px-8 py-4 rounded-xl text-white ${
                           isReady 
                             ? 'bg-green-600 hover:bg-green-700' 
                             : 'bg-gray-600 hover:bg-gray-700'
@@ -488,10 +492,10 @@ const GameSetup = () => {
                           </div>
                           <div className="flex items-center gap-2">
                             <Badge 
-                              className={`font-quicksand text-xs ${
+                              className={`font-quicksand text-xs text-white ${
                                 player.is_ready || player.is_host
-                                  ? 'bg-green-600 text-white' 
-                                  : 'bg-gray-600 text-white'
+                                  ? 'bg-green-600' 
+                                  : 'bg-gray-600'
                               }`}
                             >
                               {player.is_host ? 'Host' : player.is_ready ? 'Ready' : 'Not Ready'}

@@ -1,9 +1,12 @@
+
 import { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Users, Plus, LogOut, Dice1, Play, Crown } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Users, Plus, LogOut, Dice1, Play, Crown, Lock } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -18,6 +21,7 @@ interface GameRoom {
   max_players: number;
   status: 'waiting' | 'active' | 'finished';
   created_at: string;
+  is_private: boolean;
   host_username?: string;
   players?: string[];
 }
@@ -29,6 +33,7 @@ const Lobby = () => {
   
   const [rooms, setRooms] = useState<GameRoom[]>([]);
   const [newRoomName, setNewRoomName] = useState('');
+  const [isPrivate, setIsPrivate] = useState(false);
   const [loading, setLoading] = useState(false);
   const [userProfile, setUserProfile] = useState<any>(null);
 
@@ -38,20 +43,26 @@ const Lobby = () => {
       fetchRooms();
       
       // Set up real-time subscription for games
-      const channel = supabase
+      const gameChannel = supabase
         .channel('lobby-games')
         .on('postgres_changes', 
           { event: '*', schema: 'public', table: 'games' },
-          () => fetchRooms()
+          () => {
+            console.log('Games table changed, refetching...');
+            fetchRooms();
+          }
         )
         .on('postgres_changes',
           { event: '*', schema: 'public', table: 'game_players' },
-          () => fetchRooms()
+          () => {
+            console.log('Game players table changed, refetching...');
+            fetchRooms();
+          }
         )
         .subscribe();
 
       return () => {
-        supabase.removeChannel(channel);
+        supabase.removeChannel(gameChannel);
       };
     }
   }, [user]);
@@ -70,11 +81,12 @@ const Lobby = () => {
 
   const fetchRooms = async () => {
     try {
-      // Fetch games
+      // Fetch only public games (not private)
       const { data: games, error: gamesError } = await supabase
         .from('games')
         .select('*')
         .in('status', ['waiting', 'active'])
+        .eq('is_private', false)
         .order('created_at', { ascending: false });
 
       if (gamesError) {
@@ -96,7 +108,7 @@ const Lobby = () => {
         .select('id, username')
         .in('id', hostIds);
 
-      // Fetch player counts for each game
+      // Fetch actual player counts for each game
       const gameIds = games.map(g => g.id);
       const { data: playerCounts } = await supabase
         .from('game_players')
@@ -104,17 +116,18 @@ const Lobby = () => {
         .in('game_id', gameIds);
 
       const roomsWithPlayerInfo = games.map(game => {
-        const playerCount = playerCounts?.filter(p => p.game_id === game.id).length || 0;
+        const actualPlayerCount = playerCounts?.filter(p => p.game_id === game.id).length || 0;
         const hostProfile = hostProfiles?.find(p => p.id === game.host_id);
         
         return {
           id: game.id,
           name: game.name,
           host_id: game.host_id,
-          current_players: playerCount,
+          current_players: actualPlayerCount,
           max_players: game.max_players || 4,
           status: game.status as 'waiting' | 'active' | 'finished',
           created_at: game.created_at,
+          is_private: game.is_private || false,
           host_username: hostProfile?.username || 'Unknown'
         };
       });
@@ -131,6 +144,9 @@ const Lobby = () => {
     setLoading(true);
 
     try {
+      // Generate game code for private games
+      const gameCode = isPrivate ? Math.random().toString(36).substr(2, 8).toUpperCase() : null;
+
       // Create the game
       const { data: game, error: gameError } = await supabase
         .from('games')
@@ -139,7 +155,9 @@ const Lobby = () => {
           host_id: user.id,
           status: 'waiting',
           current_players: 1,
-          max_players: 4
+          max_players: 4,
+          is_private: isPrivate,
+          game_code: gameCode
         })
         .select()
         .single();
@@ -159,9 +177,12 @@ const Lobby = () => {
       if (playerError) throw playerError;
 
       setNewRoomName('');
+      setIsPrivate(false);
       toast({
         title: "Success!",
-        description: "Game room created successfully!",
+        description: isPrivate ? 
+          `Private game created! Share code: ${gameCode}` : 
+          "Game room created successfully!",
       });
 
       navigate(`/game/${game.id}/setup`);
@@ -205,6 +226,17 @@ const Lobby = () => {
 
       const playerCount = count || 0;
 
+      // Check if game is full
+      const room = rooms.find(r => r.id === roomId);
+      if (playerCount >= (room?.max_players || 4)) {
+        toast({
+          title: "Game Full",
+          description: "This game is already full",
+          variant: "destructive",
+        });
+        return;
+      }
+
       // Add player to the game
       const { error } = await supabase
         .from('game_players')
@@ -217,7 +249,7 @@ const Lobby = () => {
 
       if (error) throw error;
 
-      // Update game player count
+      // Update game player count is handled by trigger, but we can update it manually for consistency
       await supabase
         .from('games')
         .update({ current_players: playerCount + 1 })
@@ -269,12 +301,17 @@ const Lobby = () => {
               onClick={() => navigate('/join-game')}
               variant="outline" 
               size="sm" 
-              className="border-blue-500/50 text-blue-200 font-quicksand"
+              className="border-blue-500/50 text-blue-200 hover:bg-blue-500/20 font-quicksand"
             >
               <Users className="h-4 w-4 mr-2" />
               Join Game
             </Button>
-            <Button onClick={handleLogout} variant="outline" size="sm" className="border-purple-500/50 text-purple-200 font-quicksand">
+            <Button 
+              onClick={handleLogout} 
+              variant="outline" 
+              size="sm" 
+              className="border-purple-500/50 text-purple-200 hover:bg-purple-500/20 font-quicksand"
+            >
               <LogOut className="h-4 w-4 mr-2" />
               Logout
             </Button>
@@ -295,21 +332,34 @@ const Lobby = () => {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="flex gap-4">
-                <Input
-                  placeholder="Enter room name..."
-                  value={newRoomName}
-                  onChange={(e) => setNewRoomName(e.target.value)}
-                  className="bg-purple-900/30 border-purple-500/50 text-white flex-1 font-quicksand"
-                  onKeyPress={(e) => e.key === 'Enter' && createRoom()}
-                />
-                <Button 
-                  onClick={createRoom} 
-                  className="bg-purple-600 hover:bg-purple-700 font-quicksand font-semibold"
-                  disabled={loading || !newRoomName.trim()}
-                >
-                  {loading ? 'Creating...' : 'Create Room'}
-                </Button>
+              <div className="space-y-4">
+                <div className="flex gap-4">
+                  <Input
+                    placeholder="Enter room name..."
+                    value={newRoomName}
+                    onChange={(e) => setNewRoomName(e.target.value)}
+                    className="bg-purple-900/30 border-purple-500/50 text-white flex-1 font-quicksand"
+                    onKeyPress={(e) => e.key === 'Enter' && createRoom()}
+                  />
+                  <Button 
+                    onClick={createRoom} 
+                    className="bg-purple-600 hover:bg-purple-700 text-white font-quicksand font-semibold"
+                    disabled={loading || !newRoomName.trim()}
+                  >
+                    {loading ? 'Creating...' : 'Create Room'}
+                  </Button>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id="private-game"
+                    checked={isPrivate}
+                    onCheckedChange={setIsPrivate}
+                  />
+                  <Label htmlFor="private-game" className="text-purple-200 font-quicksand flex items-center gap-2">
+                    <Lock className="h-4 w-4" />
+                    Private Game (requires code to join)
+                  </Label>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -352,7 +402,7 @@ const Lobby = () => {
                   <Button
                     onClick={() => joinRoom(room.id)}
                     disabled={room.current_players >= room.max_players || loading}
-                    className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2 font-quicksand font-semibold"
+                    className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:bg-gray-600 text-white flex items-center gap-2 font-quicksand font-semibold"
                   >
                     <Play className="h-4 w-4" />
                     {room.current_players >= room.max_players ? 'Room Full' : 'Join Setup'}
@@ -372,8 +422,8 @@ const Lobby = () => {
             <Card className="bg-black/30 border-purple-500/30 backdrop-blur-sm">
               <CardContent className="p-8 text-center">
                 <Dice1 className="h-16 w-16 text-purple-400 mx-auto mb-4 opacity-50" />
-                <p className="text-purple-200 text-lg mb-2 font-quicksand">No games available</p>
-                <p className="text-purple-300 font-quicksand">Create a new room to start playing!</p>
+                <p className="text-purple-200 text-lg mb-2 font-quicksand">No public games available</p>
+                <p className="text-purple-300 font-quicksand">Create a new room or join a private game with a code!</p>
               </CardContent>
             </Card>
           </motion.div>

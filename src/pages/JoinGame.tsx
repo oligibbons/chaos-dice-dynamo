@@ -24,7 +24,7 @@ const JoinGame = () => {
     setLoading(true);
 
     try {
-      // Find game by code
+      // Find game by code (both public and private games)
       const { data: game, error: gameError } = await supabase
         .from('games')
         .select('*')
@@ -117,7 +117,7 @@ const JoinGame = () => {
             onClick={() => navigate('/lobby')}
             variant="outline"
             size="sm"
-            className="border-purple-500/50 text-purple-200 font-quicksand"
+            className="border-purple-500/50 text-purple-200 hover:bg-purple-500/20 font-quicksand"
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
@@ -137,7 +137,7 @@ const JoinGame = () => {
                 Enter Game Code
               </CardTitle>
               <CardDescription className="text-blue-200 font-quicksand">
-                Enter the 8-digit code shared by your friend
+                Enter the 8-digit code to join any game (public or private)
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -154,7 +154,7 @@ const JoinGame = () => {
               
               <Button 
                 onClick={joinGameByCode} 
-                className="w-full bg-blue-600 hover:bg-blue-700 font-bangers text-xl py-6"
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bangers text-xl py-6"
                 disabled={loading || gameCode.length < 8}
               >
                 {loading ? 'Joining...' : 'JOIN GAME'}
@@ -174,6 +174,7 @@ const JoinGame = () => {
             <CardContent className="p-4 text-center">
               <p className="text-purple-200 text-sm font-quicksand">
                 Ask your friend for their game code and enter it above to join their game lobby.
+                Works for both public and private games!
               </p>
             </CardContent>
           </Card>
