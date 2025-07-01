@@ -104,8 +104,14 @@ const GameSetup = () => {
         }
         
         setGameRoom({
-          ...game,
-          game_code: currentGameCode
+          id: game.id,
+          name: game.name,
+          host_id: game.host_id,
+          current_players: game.current_players || 1,
+          max_players: game.max_players || 4,
+          status: game.status as 'waiting' | 'active' | 'finished',
+          game_code: currentGameCode,
+          max_rounds: game.max_rounds || 7
         });
         setGameCode(currentGameCode);
         setIsHost(game.host_id === user?.id);
@@ -151,7 +157,7 @@ const GameSetup = () => {
           username: (gp.profiles as any)?.username || 'Unknown',
           is_ready: gp.is_ready || false,
           is_host: gp.player_id === gameRoom?.host_id,
-          joined_at: gp.joined_at
+          joined_at: gp.joined_at || new Date().toISOString()
         }));
         
         setPlayers(playersData);

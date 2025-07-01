@@ -60,7 +60,7 @@ const JoinGame = () => {
         .select('*', { count: 'exact', head: true })
         .eq('game_id', game.id);
 
-      if ((count || 0) >= game.max_players) {
+      if ((count || 0) >= (game.max_players || 4)) {
         toast({
           title: "Game Full",
           description: "This game is already full",

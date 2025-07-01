@@ -46,6 +46,7 @@ export type Database = {
         Row: {
           game_id: string
           id: string
+          is_ready: boolean | null
           joined_at: string | null
           player_id: string
           score: number | null
@@ -55,6 +56,7 @@ export type Database = {
         Insert: {
           game_id: string
           id?: string
+          is_ready?: boolean | null
           joined_at?: string | null
           player_id: string
           score?: number | null
@@ -64,6 +66,7 @@ export type Database = {
         Update: {
           game_id?: string
           id?: string
+          is_ready?: boolean | null
           joined_at?: string | null
           player_id?: string
           score?: number | null
@@ -170,6 +173,7 @@ export type Database = {
           current_players: number | null
           current_round: number | null
           finished_at: string | null
+          game_code: string | null
           host_id: string
           id: string
           max_players: number | null
@@ -186,6 +190,7 @@ export type Database = {
           current_players?: number | null
           current_round?: number | null
           finished_at?: string | null
+          game_code?: string | null
           host_id: string
           id?: string
           max_players?: number | null
@@ -202,6 +207,7 @@ export type Database = {
           current_players?: number | null
           current_round?: number | null
           finished_at?: string | null
+          game_code?: string | null
           host_id?: string
           id?: string
           max_players?: number | null
