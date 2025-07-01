@@ -9,6 +9,39 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      chaos_events: {
+        Row: {
+          active: boolean | null
+          created_at: string | null
+          description: string
+          effect: Json
+          id: string
+          name: string
+          rarity: string | null
+          trigger_condition: string | null
+        }
+        Insert: {
+          active?: boolean | null
+          created_at?: string | null
+          description: string
+          effect: Json
+          id?: string
+          name: string
+          rarity?: string | null
+          trigger_condition?: string | null
+        }
+        Update: {
+          active?: boolean | null
+          created_at?: string | null
+          description?: string
+          effect?: Json
+          id?: string
+          name?: string
+          rarity?: string | null
+          trigger_condition?: string | null
+        }
+        Relationships: []
+      }
       game_players: {
         Row: {
           game_id: string
@@ -47,10 +80,93 @@ export type Database = {
           },
         ]
       }
+      game_scorecards: {
+        Row: {
+          category: string
+          created_at: string | null
+          game_id: string
+          id: string
+          player_id: string
+          round_scored: number
+          score: number
+        }
+        Insert: {
+          category: string
+          created_at?: string | null
+          game_id: string
+          id?: string
+          player_id: string
+          round_scored: number
+          score: number
+        }
+        Update: {
+          category?: string
+          created_at?: string | null
+          game_id?: string
+          id?: string
+          player_id?: string
+          round_scored?: number
+          score?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "game_scorecards_game_id_fkey"
+            columns: ["game_id"]
+            isOneToOne: false
+            referencedRelation: "games"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      game_turns: {
+        Row: {
+          completed_at: string | null
+          created_at: string | null
+          dice_rolls: Json | null
+          game_id: string
+          id: string
+          player_id: string
+          score_earned: number | null
+          selected_category: string | null
+          turn_number: number
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string | null
+          dice_rolls?: Json | null
+          game_id: string
+          id?: string
+          player_id: string
+          score_earned?: number | null
+          selected_category?: string | null
+          turn_number: number
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string | null
+          dice_rolls?: Json | null
+          game_id?: string
+          id?: string
+          player_id?: string
+          score_earned?: number | null
+          selected_category?: string | null
+          turn_number?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "game_turns_game_id_fkey"
+            columns: ["game_id"]
+            isOneToOne: false
+            referencedRelation: "games"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       games: {
         Row: {
           chaos_events: Json | null
           created_at: string | null
+          current_player_turn: number | null
           current_players: number | null
           current_round: number | null
           finished_at: string | null
@@ -61,10 +177,12 @@ export type Database = {
           name: string
           started_at: string | null
           status: string | null
+          turn_start_time: string | null
         }
         Insert: {
           chaos_events?: Json | null
           created_at?: string | null
+          current_player_turn?: number | null
           current_players?: number | null
           current_round?: number | null
           finished_at?: string | null
@@ -75,10 +193,12 @@ export type Database = {
           name: string
           started_at?: string | null
           status?: string | null
+          turn_start_time?: string | null
         }
         Update: {
           chaos_events?: Json | null
           created_at?: string | null
+          current_player_turn?: number | null
           current_players?: number | null
           current_round?: number | null
           finished_at?: string | null
@@ -89,6 +209,7 @@ export type Database = {
           name?: string
           started_at?: string | null
           status?: string | null
+          turn_start_time?: string | null
         }
         Relationships: []
       }
@@ -142,6 +263,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      advance_game_turn: {
+        Args: { game_uuid: string }
+        Returns: undefined
+      }
+      check_game_completion: {
+        Args: { game_uuid: string }
+        Returns: boolean
+      }
       has_role: {
         Args: {
           _user_id: string

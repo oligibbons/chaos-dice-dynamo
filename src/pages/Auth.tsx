@@ -1,27 +1,48 @@
 
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dice1, Dice2, Dice3, Dice4, Dice5, Dice6, Sparkles, Zap } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Dice1, Eye, EyeOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import type { User, Session } from '@supabase/supabase-js';
 
 const Auth = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [isLoading, setIsLoading] = useState(false);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [username, setUsername] = useState('');
+  const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [formData, setFormData] = useState({
+    email: '',
+    password: '',
+    username: ''
+  });
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session) {
+    // Set up auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        setSession(session);
+        setUser(session?.user ?? null);
+        
+        if (session?.user) {
+          navigate('/lobby');
+        }
+      }
+    );
+
+    // Check for existing session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      
+      if (session?.user) {
         navigate('/lobby');
       }
     });
@@ -29,264 +50,225 @@ const Auth = () => {
     return () => subscription.unsubscribe();
   }, [navigate]);
 
-  const floatingDice = [Dice1, Dice2, Dice3, Dice4, Dice5, Dice6];
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (error) {
-      toast({
-        title: "Login Failed",
-        description: error.message,
-        variant: "destructive",
-      });
-    } else {
-      toast({
-        title: "Welcome back!",
-        description: "You've successfully logged in.",
-      });
-    }
-
-    setIsLoading(false);
-  };
-
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
+    setLoading(true);
 
+    if (!formData.username.trim()) {
+      toast({
+        title: "Error",
+        description: "Please enter a username",
+        variant: "destructive",
+      });
+      setLoading(false);
+      return;
+    }
+
+    const redirectUrl = `${window.location.origin}/`;
+    
     const { error } = await supabase.auth.signUp({
-      email,
-      password,
+      email: formData.email,
+      password: formData.password,
       options: {
-        data: { username },
-        emailRedirectTo: `${window.location.origin}/lobby`
+        emailRedirectTo: redirectUrl,
+        data: {
+          username: formData.username
+        }
       }
     });
 
+    setLoading(false);
+
     if (error) {
       toast({
-        title: "Sign Up Failed",
+        title: "Sign Up Error",
         description: error.message,
         variant: "destructive",
       });
     } else {
       toast({
-        title: "Account Created!",
-        description: "Please check your email to confirm your account.",
+        title: "Success!",
+        description: "Account created successfully! You can now sign in.",
+        variant: "default",
       });
     }
-
-    setIsLoading(false);
   };
 
+  const handleSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email: formData.email,
+      password: formData.password,
+    });
+
+    setLoading(false);
+
+    if (error) {
+      toast({
+        title: "Sign In Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData(prev => ({
+      ...prev,
+      [e.target.name]: e.target.value
+    }));
+  };
+
+  if (user) {
+    return null; // Will redirect via useEffect
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-indigo-900 to-pink-900 relative overflow-hidden">
-      {/* Animated Background Elements */}
-      <div className="absolute inset-0 overflow-hidden">
-        {floatingDice.map((DiceIcon, index) => (
-          <motion.div
-            key={index}
-            className="absolute text-white/10"
-            initial={{ 
-              x: Math.random() * window.innerWidth,
-              y: Math.random() * window.innerHeight,
-              rotate: 0
-            }}
-            animate={{ 
-              x: Math.random() * window.innerWidth,
-              y: Math.random() * window.innerHeight,
-              rotate: 360
-            }}
-            transition={{ 
-              duration: 20 + Math.random() * 10,
-              repeat: Infinity,
-              ease: "linear"
-            }}
-          >
-            <DiceIcon size={40 + Math.random() * 40} />
-          </motion.div>
-        ))}
-      </div>
+    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-indigo-900 to-pink-900 flex items-center justify-center p-4">
+      <div className="w-full max-w-md">
+        <div className="text-center mb-8">
+          <div className="flex items-center justify-center gap-2 mb-4">
+            <Dice1 className="text-purple-400 h-12 w-12" />
+            <h1 className="text-4xl font-bold text-white">DieNamic</h1>
+          </div>
+          <p className="text-purple-200">The ultimate chaos dice game</p>
+        </div>
 
-      {/* Sparkle Effects */}
-      <div className="absolute inset-0">
-        {[...Array(20)].map((_, i) => (
-          <motion.div
-            key={i}
-            className="absolute text-yellow-400/30"
-            initial={{ 
-              scale: 0,
-              x: Math.random() * window.innerWidth,
-              y: Math.random() * window.innerHeight
-            }}
-            animate={{ 
-              scale: [0, 1, 0],
-              rotate: 360
-            }}
-            transition={{ 
-              duration: 3 + Math.random() * 2,
-              repeat: Infinity,
-              delay: Math.random() * 5
-            }}
-          >
-            <Sparkles size={16} />
-          </motion.div>
-        ))}
-      </div>
-
-      <div className="relative z-10 flex items-center justify-center min-h-screen p-4">
-        <motion.div
-          initial={{ opacity: 0, y: 50, rotateX: -30 }}
-          animate={{ opacity: 1, y: 0, rotateX: 0 }}
-          transition={{ duration: 0.8, ease: "easeOut" }}
-          className="w-full max-w-md"
-        >
-          <Card className="bg-black/40 border-2 border-purple-500/50 backdrop-blur-xl shadow-2xl shadow-purple-500/20">
-            <CardHeader className="text-center pb-2">
-              <motion.div
-                animate={{ rotateY: 360 }}
-                transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
-                className="mx-auto mb-4"
-              >
-                <div className="relative">
-                  <Zap className="h-16 w-16 text-yellow-400 drop-shadow-lg" />
-                  <motion.div
-                    animate={{ scale: [1, 1.2, 1] }}
-                    transition={{ duration: 2, repeat: Infinity }}
-                    className="absolute -top-2 -right-2"
-                  >
-                    <Sparkles className="h-6 w-6 text-pink-400" />
-                  </motion.div>
-                </div>
-              </motion.div>
-              <CardTitle className="text-3xl font-bold bg-gradient-to-r from-purple-400 via-pink-400 to-cyan-400 bg-clip-text text-transparent">
-                Join the Chaos
-              </CardTitle>
-              <CardDescription className="text-purple-200">
-                Enter the whimsical world of DieNamic
-              </CardDescription>
-            </CardHeader>
-
-            <CardContent>
-              <Tabs defaultValue="login" className="w-full">
-                <TabsList className="grid w-full grid-cols-2 bg-purple-900/50 border border-purple-500/30">
-                  <TabsTrigger 
-                    value="login" 
-                    className="text-white data-[state=active]:bg-gradient-to-r data-[state=active]:from-purple-600 data-[state=active]:to-pink-600 data-[state=active]:text-white"
-                  >
-                    Login
-                  </TabsTrigger>
-                  <TabsTrigger 
-                    value="signup" 
-                    className="text-white data-[state=active]:bg-gradient-to-r data-[state=active]:from-pink-600 data-[state=active]:to-cyan-600 data-[state=active]:text-white"
-                  >
-                    Sign Up
-                  </TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="login">
-                  <form onSubmit={handleLogin} className="space-y-4">
-                    <div>
-                      <Label htmlFor="email" className="text-purple-200">Email</Label>
-                      <Input
-                        id="email"
-                        type="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="bg-purple-900/30 border-purple-500/50 text-white placeholder:text-purple-300 focus:border-pink-400 transition-colors"
-                        placeholder="Enter your email"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="password" className="text-purple-200">Password</Label>
+        <Card className="bg-black/50 border-purple-500/50 backdrop-blur-sm">
+          <CardHeader>
+            <CardTitle className="text-white text-center">Welcome</CardTitle>
+            <CardDescription className="text-purple-200 text-center">
+              Sign in to your account or create a new one
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Tabs defaultValue="signin" className="w-full">
+              <TabsList className="grid w-full grid-cols-2 mb-6">
+                <TabsTrigger value="signin">Sign In</TabsTrigger>
+                <TabsTrigger value="signup">Sign Up</TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="signin">
+                <form onSubmit={handleSignIn} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="email" className="text-white">Email</Label>
+                    <Input
+                      id="email"
+                      name="email"
+                      type="email"
+                      value={formData.email}
+                      onChange={handleInputChange}
+                      required
+                      className="bg-purple-900/30 border-purple-500/50 text-white"
+                      placeholder="Enter your email"
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="password" className="text-white">Password</Label>
+                    <div className="relative">
                       <Input
                         id="password"
-                        type="password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        className="bg-purple-900/30 border-purple-500/50 text-white placeholder:text-purple-300 focus:border-pink-400 transition-colors"
+                        name="password"
+                        type={showPassword ? "text" : "password"}
+                        value={formData.password}
+                        onChange={handleInputChange}
+                        required
+                        className="bg-purple-900/30 border-purple-500/50 text-white pr-10"
                         placeholder="Enter your password"
-                        required
                       />
-                    </div>
-                    <motion.div
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                    >
-                      <Button 
-                        type="submit" 
-                        className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-semibold py-2 shadow-lg"
-                        disabled={isLoading}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-0 top-0 h-full px-3 text-purple-300 hover:text-white"
+                        onClick={() => setShowPassword(!showPassword)}
                       >
-                        {isLoading ? "Entering..." : "Enter the Game"}
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </Button>
-                    </motion.div>
-                  </form>
-                </TabsContent>
-
-                <TabsContent value="signup">
-                  <form onSubmit={handleSignUp} className="space-y-4">
-                    <div>
-                      <Label htmlFor="signup-username" className="text-purple-200">Username</Label>
-                      <Input
-                        id="signup-username"
-                        type="text"
-                        value={username}
-                        onChange={(e) => setUsername(e.target.value)}
-                        className="bg-purple-900/30 border-purple-500/50 text-white placeholder:text-purple-300 focus:border-cyan-400 transition-colors"
-                        placeholder="Choose your username"
-                        required
-                      />
                     </div>
-                    <div>
-                      <Label htmlFor="signup-email" className="text-purple-200">Email</Label>
-                      <Input
-                        id="signup-email"
-                        type="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="bg-purple-900/30 border-purple-500/50 text-white placeholder:text-purple-300 focus:border-cyan-400 transition-colors"
-                        placeholder="Enter your email"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="signup-password" className="text-purple-200">Password</Label>
+                  </div>
+                  
+                  <Button 
+                    type="submit" 
+                    className="w-full bg-purple-600 hover:bg-purple-700"
+                    disabled={loading}
+                  >
+                    {loading ? 'Signing In...' : 'Sign In'}
+                  </Button>
+                </form>
+              </TabsContent>
+              
+              <TabsContent value="signup">
+                <form onSubmit={handleSignUp} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-username" className="text-white">Username</Label>
+                    <Input
+                      id="signup-username"
+                      name="username"
+                      type="text"
+                      value={formData.username}
+                      onChange={handleInputChange}
+                      required
+                      className="bg-purple-900/30 border-purple-500/50 text-white"
+                      placeholder="Choose a username"
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-email" className="text-white">Email</Label>
+                    <Input
+                      id="signup-email"
+                      name="email"
+                      type="email"
+                      value={formData.email}
+                      onChange={handleInputChange}
+                      required
+                      className="bg-purple-900/30 border-purple-500/50 text-white"
+                      placeholder="Enter your email"
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-password" className="text-white">Password</Label>
+                    <div className="relative">
                       <Input
                         id="signup-password"
-                        type="password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        className="bg-purple-900/30 border-purple-500/50 text-white placeholder:text-purple-300 focus:border-cyan-400 transition-colors"
-                        placeholder="Create a password"
+                        name="password"
+                        type={showPassword ? "text" : "password"}
+                        value={formData.password}
+                        onChange={handleInputChange}
                         required
+                        minLength={6}
+                        className="bg-purple-900/30 border-purple-500/50 text-white pr-10"
+                        placeholder="Create a password (min 6 characters)"
                       />
-                    </div>
-                    <motion.div
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                    >
-                      <Button 
-                        type="submit" 
-                        className="w-full bg-gradient-to-r from-pink-600 to-cyan-600 hover:from-pink-700 hover:to-cyan-700 text-white font-semibold py-2 shadow-lg"
-                        disabled={isLoading}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-0 top-0 h-full px-3 text-purple-300 hover:text-white"
+                        onClick={() => setShowPassword(!showPassword)}
                       >
-                        {isLoading ? "Creating..." : "Begin the Adventure"}
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </Button>
-                    </motion.div>
-                  </form>
-                </TabsContent>
-              </Tabs>
-            </CardContent>
-          </Card>
-        </motion.div>
+                    </div>
+                  </div>
+                  
+                  <Button 
+                    type="submit" 
+                    className="w-full bg-blue-600 hover:bg-blue-700"
+                    disabled={loading}
+                  >
+                    {loading ? 'Creating Account...' : 'Create Account'}
+                  </Button>
+                </form>
+              </TabsContent>
+            </Tabs>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

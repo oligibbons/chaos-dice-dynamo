@@ -1,326 +1,356 @@
-import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+
+import React from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dice1, Dice2, Dice3, Users, Trophy, Zap, Sparkles, Crown } from "lucide-react";
-import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { Badge } from "@/components/ui/badge";
+import { Dice1, Dice2, Dice3, Dice4, Dice5, Dice6, Zap, Users, Trophy, Crown, Play } from "lucide-react";
+import { motion } from "framer-motion";
+import { Link } from "react-router-dom";
 
 const Index = () => {
-  const navigate = useNavigate();
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [userRole, setUserRole] = useState<string>('user');
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-indigo-900 to-pink-900">
+      {/* Hero Section */}
+      <div className="relative overflow-hidden">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8 }}
+            className="text-center"
+          >
+            <div className="flex justify-center items-center gap-4 mb-8">
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
+              >
+                <Dice1 className="h-16 w-16 text-purple-400" />
+              </motion.div>
+              <h1 className="text-6xl md:text-8xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400">
+                DieNamic
+              </h1>
+              <motion.div
+                animate={{ rotate: -360 }}
+                transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
+              >
+                <Dice6 className="h-16 w-16 text-pink-400" />
+              </motion.div>
+            </div>
+            
+            <p className="text-xl md:text-2xl text-purple-200 mb-8 max-w-3xl mx-auto">
+              The ultimate multiplayer chaos dice game where strategy meets randomness. 
+              Roll, score, and survive the chaos events in this thrilling online experience!
+            </p>
 
-  useEffect(() => {
-    checkAuthStatus();
-    
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session) {
-        const { data: roles } = await supabase
-          .from('user_roles')
-          .select('role')
-          .eq('user_id', session.user.id)
-          .single();
-        
-        setUserRole(roles?.role || 'user');
-        setIsLoggedIn(true);
-      } else {
-        setIsLoggedIn(false);
-        setUserRole('user');
-      }
-    });
+            <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+              <Link to="/auth">
+                <Button className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-4 px-8 text-lg">
+                  <Play className="mr-2 h-5 w-5" />
+                  Start Playing
+                </Button>
+              </Link>
+              <Button variant="outline" className="border-purple-400 text-purple-200 hover:bg-purple-800/50 py-4 px-8 text-lg">
+                Learn More
+              </Button>
+            </div>
+          </motion.div>
 
-    return () => subscription.unsubscribe();
-  }, []);
+          {/* Floating Dice Animation */}
+          <div className="absolute inset-0 overflow-hidden pointer-events-none">
+            {[Dice1, Dice2, Dice3, Dice4, Dice5, Dice6].map((DiceIcon, index) => (
+              <motion.div
+                key={index}
+                className="absolute"
+                style={{
+                  left: `${Math.random() * 100}%`,
+                  top: `${Math.random() * 100}%`,
+                }}
+                animate={{
+                  y: [0, -20, 0],
+                  rotate: [0, 180, 360],
+                  opacity: [0.3, 0.6, 0.3],
+                }}
+                transition={{
+                  duration: 4 + Math.random() * 2,
+                  repeat: Infinity,
+                  delay: Math.random() * 2,
+                }}
+              >
+                <DiceIcon className="h-8 w-8 text-purple-500/30" />
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </div>
 
-  const checkAuthStatus = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session) {
-      const { data: roles } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', session.user.id)
-        .single();
-      
-      setUserRole(roles?.role || 'user');
-      setIsLoggedIn(true);
-    }
-  };
+      {/* Features Section */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8 }}
+          className="text-center mb-16"
+        >
+          <h2 className="text-4xl md:text-5xl font-bold text-white mb-4">
+            Why Choose DieNamic?
+          </h2>
+          <p className="text-xl text-purple-200 max-w-2xl mx-auto">
+            Experience the perfect blend of strategy, luck, and chaos in the most exciting dice game ever created.
+          </p>
+        </motion.div>
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setIsLoggedIn(false);
-    setUserRole('user');
-  };
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.1 }}
+          >
+            <Card className="bg-black/40 border-purple-500/50 backdrop-blur-sm h-full">
+              <CardHeader>
+                <div className="flex items-center gap-3">
+                  <Users className="h-8 w-8 text-blue-400" />
+                  <CardTitle className="text-white">Multiplayer Mayhem</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <CardDescription className="text-purple-200">
+                  Play with up to 4 players in real-time. Challenge friends or meet new opponents 
+                  in our global matchmaking system.
+                </CardDescription>
+              </CardContent>
+            </Card>
+          </motion.div>
 
-  const floatingDice = [Dice1, Dice2, Dice3];
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.2 }}
+          >
+            <Card className="bg-black/40 border-purple-500/50 backdrop-blur-sm h-full">
+              <CardHeader>
+                <div className="flex items-center gap-3">
+                  <Zap className="h-8 w-8 text-red-400" />
+                  <CardTitle className="text-white">Chaos Events</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <CardDescription className="text-purple-200">
+                  Unpredictable chaos events shake up gameplay! From bonus rounds to score swaps, 
+                  expect the unexpected.
+                </CardDescription>
+              </CardContent>
+            </Card>
+          </motion.div>
 
-  if (isLoggedIn) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 relative overflow-hidden">
-        {/* Animated Background */}
-        <div className="absolute inset-0 overflow-hidden">
-          {[...Array(15)].map((_, i) => (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.3 }}
+          >
+            <Card className="bg-black/40 border-purple-500/50 backdrop-blur-sm h-full">
+              <CardHeader>
+                <div className="flex items-center gap-3">
+                  <Trophy className="h-8 w-8 text-yellow-400" />
+                  <CardTitle className="text-white">Strategic Scoring</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <CardDescription className="text-purple-200">
+                  Master the art of dice combinations. From straights to full houses, 
+                  every roll counts toward victory.
+                </CardDescription>
+              </CardContent>
+            </Card>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.4 }}
+          >
+            <Card className="bg-black/40 border-purple-500/50 backdrop-blur-sm h-full">
+              <CardHeader>
+                <div className="flex items-center gap-3">
+                  <Crown className="h-8 w-8 text-purple-400" />
+                  <CardTitle className="text-white">Room Creation</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <CardDescription className="text-purple-200">
+                  Create private rooms for friends or join public matches. 
+                  Customize game settings and become the game master.
+                </CardDescription>
+              </CardContent>
+            </Card>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.5 }}
+          >
+            <Card className="bg-black/40 border-purple-500/50 backdrop-blur-sm h-full">
+              <CardHeader>
+                <div className="flex items-center gap-3">
+                  <Dice3 className="h-8 w-8 text-green-400" />
+                  <CardTitle className="text-white">Real-time Updates</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <CardDescription className="text-purple-200">
+                  Experience seamless real-time gameplay with instant updates. 
+                  See every roll, every score, every chaos event as it happens.
+                </CardDescription>
+              </CardContent>
+            </Card>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.6 }}
+          >
+            <Card className="bg-black/40 border-purple-500/50 backdrop-blur-sm h-full">
+              <CardHeader>
+                <div className="flex items-center gap-3">
+                  <Dice5 className="h-8 w-8 text-orange-400" />
+                  <CardTitle className="text-white">Progressive Difficulty</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <CardDescription className="text-purple-200">
+                  Games get more intense as rounds progress. More chaos events, 
+                  higher stakes, and greater rewards await the brave.
+                </CardDescription>
+              </CardContent>
+            </Card>
+          </motion.div>
+        </div>
+      </div>
+
+      {/* How to Play Section */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8 }}
+          className="text-center mb-16"
+        >
+          <h2 className="text-4xl md:text-5xl font-bold text-white mb-4">
+            How to Play
+          </h2>
+          <p className="text-xl text-purple-200 max-w-2xl mx-auto">
+            Simple to learn, impossible to master. Here's how DieNamic works.
+          </p>
+        </motion.div>
+
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
+          {[
+            {
+              step: "1",
+              title: "Roll the Dice",
+              description: "Start each turn by rolling all 5 dice. You get up to 3 rolls per turn to achieve your desired combination.",
+              icon: Dice1
+            },
+            {
+              step: "2", 
+              title: "Hold & Re-roll",
+              description: "After your first roll, choose which dice to keep and which to re-roll. Strategy is key!",
+              icon: Dice2
+            },
+            {
+              step: "3",
+              title: "Score Points",
+              description: "Choose a scoring category based on your final dice combination. Each category can only be used once!",
+              icon: Dice3
+            },
+            {
+              step: "4",
+              title: "Survive Chaos",
+              description: "Random chaos events can change everything! Adapt your strategy and emerge victorious.",
+              icon: Zap
+            }
+          ].map((step, index) => (
             <motion.div
-              key={i}
-              className="absolute text-white/10"
-              initial={{ 
-                x: Math.random() * window.innerWidth,
-                y: Math.random() * window.innerHeight,
-                rotate: 0
-              }}
-              animate={{ 
-                x: Math.random() * window.innerWidth,
-                y: Math.random() * window.innerHeight,
-                rotate: 360
-              }}
-              transition={{ 
-                duration: 15 + Math.random() * 10,
-                repeat: Infinity,
-                ease: "linear"
-              }}
+              key={step.step}
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, delay: index * 0.1 }}
             >
-              {React.createElement(floatingDice[i % floatingDice.length], { size: 30 + Math.random() * 30 })}
+              <Card className="bg-black/40 border-purple-500/50 backdrop-blur-sm h-full text-center">
+                <CardHeader>
+                  <div className="flex flex-col items-center gap-4">
+                    <div className="bg-gradient-to-r from-purple-600 to-pink-600 rounded-full w-12 h-12 flex items-center justify-center">
+                      <span className="text-white font-bold text-lg">{step.step}</span>
+                    </div>
+                    <step.icon className="h-8 w-8 text-purple-400" />
+                    <CardTitle className="text-white">{step.title}</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <CardDescription className="text-purple-200">
+                    {step.description}
+                  </CardDescription>
+                </CardContent>
+              </Card>
             </motion.div>
           ))}
         </div>
+      </div>
 
-        <div className="relative z-10 flex items-center justify-center min-h-screen p-4">
-          <motion.div
-            initial={{ opacity: 0, y: 50 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, ease: "easeOut" }}
-            className="max-w-md w-full"
-          >
-            <Card className="bg-black/50 border-2 border-purple-500/50 backdrop-blur-xl shadow-2xl shadow-purple-500/20">
-              <CardHeader className="text-center">
-                <motion.div
-                  animate={{ rotateY: 360 }}
-                  transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
-                  className="mx-auto mb-4"
-                >
-                  <Crown className="h-16 w-16 text-yellow-400 drop-shadow-lg" />
-                </motion.div>
-                
-                <CardTitle className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-cyan-400 bg-clip-text text-transparent flex items-center justify-center gap-2">
-                  <Dice1 className="text-purple-400" />
-                  DieNamic
-                  <Dice2 className="text-blue-400" />
-                </CardTitle>
-                
-                <CardDescription className="text-purple-200 text-lg">
-                  Welcome back, Champion!
-                </CardDescription>
-              </CardHeader>
-              
-              <CardContent className="space-y-4">
-                <motion.div
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                >
-                  <Button 
-                    onClick={() => navigate('/lobby')} 
-                    className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-semibold py-3 text-lg shadow-lg"
-                  >
-                    <Zap className="mr-2" />
-                    Enter Game Lobby
+      {/* CTA Section */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8 }}
+          className="text-center"
+        >
+          <Card className="bg-gradient-to-r from-purple-800/50 to-pink-800/50 border-purple-500/50 backdrop-blur-sm">
+            <CardContent className="py-16">
+              <h2 className="text-4xl md:text-5xl font-bold text-white mb-4">
+                Ready to Roll?
+              </h2>
+              <p className="text-xl text-purple-200 mb-8 max-w-2xl mx-auto">
+                Join thousands of players in the most exciting dice game experience. 
+                Create your account and start rolling today!
+              </p>
+              <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+                <Link to="/auth">
+                  <Button className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-4 px-12 text-lg">
+                    <Play className="mr-2 h-5 w-5" />
+                    Play Now - It's Free!
                   </Button>
-                </motion.div>
-                
-                {userRole === 'admin' && (
-                  <motion.div
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                  >
-                    <Button 
-                      onClick={() => navigate('/admin')} 
-                      className="w-full bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700 text-white font-semibold py-3 text-lg shadow-lg"
-                    >
-                      <Crown className="mr-2" />
-                      Admin Panel
-                    </Button>
-                  </motion.div>
-                )}
-                
-                <Button 
-                  onClick={handleLogout} 
-                  variant="outline" 
-                  className="w-full border-purple-500/50 text-purple-200 hover:bg-purple-900/50"
-                >
-                  Logout
-                </Button>
-              </CardContent>
-            </Card>
-          </motion.div>
+                </Link>
+              </div>
+              <div className="flex justify-center items-center gap-4 mt-8">
+                <Badge className="bg-green-600 text-white">
+                  <Users className="w-4 h-4 mr-1" />
+                  Online Multiplayer
+                </Badge>
+                <Badge className="bg-blue-600 text-white">
+                  <Zap className="w-4 h-4 mr-1" />
+                  Real-time Updates
+                </Badge>
+                <Badge className="bg-purple-600 text-white">
+                  <Trophy className="w-4 h-4 mr-1" />
+                  Competitive Play
+                </Badge>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </div>
+
+      {/* Footer */}
+      <footer className="border-t border-purple-500/30 bg-black/20">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="flex justify-center items-center gap-2">
+            <Dice1 className="h-6 w-6 text-purple-400" />
+            <span className="text-purple-200">© 2024 DieNamic. Roll with the chaos.</span>
+          </div>
         </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 relative overflow-hidden">
-      {/* Animated Background Elements */}
-      <div className="absolute inset-0 overflow-hidden">
-        {[...Array(20)].map((_, i) => (
-          <motion.div
-            key={i}
-            className="absolute text-white/10"
-            initial={{ 
-              x: Math.random() * window.innerWidth,
-              y: Math.random() * window.innerHeight,
-              rotate: 0
-            }}
-            animate={{ 
-              x: Math.random() * window.innerWidth,
-              y: Math.random() * window.innerHeight,
-              rotate: 360
-            }}
-            transition={{ 
-              duration: 20 + Math.random() * 10,
-              repeat: Infinity,
-              ease: "linear"
-            }}
-          >
-            {React.createElement(floatingDice[i % floatingDice.length], { size: 40 + Math.random() * 40 })}
-          </motion.div>
-        ))}
-        
-        {/* Sparkle Effects */}
-        {[...Array(30)].map((_, i) => (
-          <motion.div
-            key={`sparkle-${i}`}
-            className="absolute text-yellow-400/20"
-            initial={{ 
-              scale: 0,
-              x: Math.random() * window.innerWidth,
-              y: Math.random() * window.innerHeight
-            }}
-            animate={{ 
-              scale: [0, 1, 0],
-              rotate: 360
-            }}
-            transition={{ 
-              duration: 3 + Math.random() * 2,
-              repeat: Infinity,
-              delay: Math.random() * 5
-            }}
-          >
-            <Sparkles size={12} />
-          </motion.div>
-        ))}
-      </div>
-
-      <div className="relative z-10 flex items-center justify-center min-h-screen p-4">
-        <div className="w-full max-w-4xl">
-          {/* Hero Section */}
-          <motion.div
-            initial={{ opacity: 0, y: -50 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 1, ease: "easeOut" }}
-            className="text-center mb-8"
-          >
-            <h1 className="text-6xl font-bold text-white mb-4 flex items-center justify-center gap-4">
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
-              >
-                <Dice1 className="text-purple-400" />
-              </motion.div>
-              
-              <span className="bg-gradient-to-r from-purple-400 via-pink-400 to-cyan-400 bg-clip-text text-transparent">
-                DieNamic
-              </span>
-              
-              <motion.div
-                animate={{ rotate: -360 }}
-                transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
-              >
-                <Dice2 className="text-blue-400" />
-              </motion.div>
-            </h1>
-            
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.5 }}
-              className="text-xl text-purple-200 mb-2"
-            >
-              The Game of Whimsical Wagers
-            </motion.p>
-            
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.7 }}
-              className="text-purple-300 max-w-2xl mx-auto"
-            >
-              A turn-based online dice game where chaos meets strategy. Roll dice, score points, 
-              but beware - the rules change every round!
-            </motion.p>
-          </motion.div>
-
-          {/* Features */}
-          <motion.div
-            initial={{ opacity: 0, y: 50 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3, duration: 0.8 }}
-            className="grid md:grid-cols-3 gap-6 mb-8"
-          >
-            {[
-              { Icon: Users, title: "Multiplayer Mayhem", desc: "2-4 players battle in real-time chaos", color: "purple" },
-              { Icon: Zap, title: "Chaos Events", desc: "Dynamic rules that change every round", color: "blue" },
-              { Icon: Trophy, title: "Strategic Scoring", desc: "Easy to learn, impossible to master", color: "indigo" }
-            ].map((feature, index) => (
-              <motion.div
-                key={feature.title}
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.5 + index * 0.1 }}
-                whileHover={{ scale: 1.05, y: -5 }}
-              >
-                <Card className={`bg-black/30 border-${feature.color}-500/30 backdrop-blur-sm hover:bg-black/40 transition-all cursor-pointer`}>
-                  <CardContent className="p-6 text-center">
-                    <feature.Icon className={`h-12 w-12 text-${feature.color}-400 mx-auto mb-4`} />
-                    <h3 className="text-lg font-semibold text-white mb-2">{feature.title}</h3>
-                    <p className={`text-${feature.color}-200 text-sm`}>{feature.desc}</p>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            ))}
-          </motion.div>
-
-          {/* CTA Section */}
-          <motion.div
-            initial={{ opacity: 0, y: 50 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.9 }}
-            className="text-center"
-          >
-            <Card className="bg-black/50 border-2 border-purple-500/50 backdrop-blur-xl shadow-2xl shadow-purple-500/20 max-w-md mx-auto">
-              <CardHeader className="text-center">
-                <CardTitle className="text-2xl font-bold text-white">Ready to Roll?</CardTitle>
-                <CardDescription className="text-purple-200">
-                  Join the chaos and start your DieNamic adventure
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <motion.div
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                >
-                  <Button
-                    onClick={() => navigate('/auth')}
-                    className="w-full bg-gradient-to-r from-purple-600 via-pink-600 to-cyan-600 hover:from-purple-700 hover:via-pink-700 hover:to-cyan-700 text-white font-bold py-3 text-lg shadow-lg"
-                  >
-                    <Sparkles className="mr-2" />
-                    Start Playing Now
-                  </Button>
-                </motion.div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        </div>
-      </div>
+      </footer>
     </div>
   );
 };
