@@ -14,6 +14,7 @@ import Lobby from "./pages/Lobby";
 import Game from "./pages/Game";
 import Settings from "./pages/Settings";
 import Admin from "./pages/Admin";
+import Friends from "./pages/Friends";
 import Confirmation from "./pages/Confirmation";
 import NotFound from "./pages/NotFound";
 
@@ -50,6 +51,11 @@ const App = () => (
               <Route path="/admin" element={
                 <ProtectedRoute>
                   <Admin />
+                </ProtectedRoute>
+              } />
+              <Route path="/friends" element={
+                <ProtectedRoute>
+                  <Friends />
                 </ProtectedRoute>
               } />
               <Route path="/confirmation" element={<Confirmation />} />
