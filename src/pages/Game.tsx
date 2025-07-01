@@ -1,11 +1,10 @@
-
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Zap, Crown, Timer, Users, RotateCcw, Trophy, Sparkles, AlertTriangle, ExitIcon } from "lucide-react";
+import { Zap, Crown, Timer, Users, RotateCcw, Trophy, Sparkles, AlertTriangle, LogOut } from "lucide-react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -593,7 +592,7 @@ const Game = () => {
               size="sm"
               className="border-red-500/50 text-red-300 hover:bg-red-800/50"
             >
-              <ExitIcon className="w-4 h-4 mr-2" />
+              <LogOut className="w-4 h-4 mr-2" />
               Leave
             </Button>
 
