@@ -1,0 +1,11 @@
+
+This folder should contain sound effects:
+- dice-roll.mp3
+- score.mp3  
+- chaos.mp3
+- win.mp3
+- tick.mp3
+- notification.mp3
+- emote.mp3
+
+For now, the SoundManager will gracefully handle missing sound files.

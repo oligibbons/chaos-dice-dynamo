@@ -7,6 +7,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import NavBar from "@/components/NavBar";
+import SoundManagerComponent from "@/components/SoundManager";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Lobby from "./pages/Lobby";
@@ -23,6 +24,7 @@ const App = () => (
       <TooltipProvider>
         <Toaster />
         <Sonner />
+        <SoundManagerComponent />
         <BrowserRouter>
           <NavBar />
           <div className="pt-16">

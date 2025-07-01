@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Zap, Crown, Timer, Users, RotateCcw, Trophy, Sparkles } from "lucide-react";
+import { Zap, Crown, Timer, Users, RotateCcw, Trophy, Sparkles, AlertTriangle, ExitIcon } from "lucide-react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -12,6 +13,11 @@ import { useAuth } from "@/hooks/useAuth";
 import Dice3D from "@/components/Dice3D";
 import ChaosEvents from "@/components/ChaosEvents";
 import GameOver from "@/components/GameOver";
+import GameTimer from "@/components/GameTimer";
+import GameNotification from "@/components/GameNotification";
+import PlayerEmotes from "@/components/PlayerEmotes";
+import RoomInvite from "@/components/RoomInvite";
+import { useSoundManager } from "@/components/SoundManager";
 
 interface GameState {
   id: string;
@@ -25,11 +31,21 @@ interface GameState {
   host_id: string;
 }
 
+interface GameNotificationData {
+  id: string;
+  type: 'score' | 'chaos' | 'win' | 'turn' | 'achievement';
+  title: string;
+  message: string;
+  points?: number;
+  player?: string;
+}
+
 const Game = () => {
   const { gameId } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user } = useAuth();
+  const soundManager = useSoundManager();
   
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [currentDice, setCurrentDice] = useState([1, 2, 3, 4, 5]);
@@ -40,8 +56,22 @@ const Game = () => {
   const [playerScorecard, setPlayerScorecard] = useState<Record<string, number>>({});
   const [gameFinished, setGameFinished] = useState(false);
   const [finalScores, setFinalScores] = useState<any[]>([]);
+  const [notification, setNotification] = useState<GameNotificationData | null>(null);
+  const [turnStartTime, setTurnStartTime] = useState<Date | null>(null);
+  const [chaosEventsApplied, setChaosEventsApplied] = useState<any[]>([]);
 
-  const MAX_TURNS = 5; // 5 turns instead of 13 rounds
+  const WIN_SCORE = 150;
+  const MAX_TURNS = 5;
+
+  const showNotification = useCallback((notif: Omit<GameNotificationData, 'id'>) => {
+    const id = Date.now().toString();
+    setNotification({ ...notif, id });
+    
+    // Auto-close after 3 seconds
+    setTimeout(() => {
+      setNotification(null);
+    }, 3000);
+  }, []);
 
   useEffect(() => {
     if (!gameId || !user) {
@@ -62,7 +92,10 @@ const Game = () => {
           table: 'games',
           filter: `id=eq.${gameId}`
         }, 
-        () => fetchGameState()
+        () => {
+          fetchGameState();
+          soundManager.play('notification', 0.2);
+        }
       )
       .on('postgres_changes',
         {
@@ -80,7 +113,10 @@ const Game = () => {
           table: 'game_scorecards',
           filter: `game_id=eq.${gameId}`
         },
-        () => fetchPlayerScorecard()
+        () => {
+          fetchPlayerScorecard();
+          soundManager.play('score', 0.3);
+        }
       )
       .subscribe();
 
@@ -93,7 +129,6 @@ const Game = () => {
     if (!gameId) return;
 
     try {
-      // Fetch game data
       const { data: game, error: gameError } = await supabase
         .from('games')
         .select('*')
@@ -109,7 +144,6 @@ const Game = () => {
         return;
       }
 
-      // Fetch game players
       const { data: gamePlayers, error: playersError } = await supabase
         .from('game_players')
         .select('*')
@@ -121,18 +155,29 @@ const Game = () => {
         return;
       }
 
-      // Fetch player profiles
       const playerIds = gamePlayers?.map(p => p.player_id) || [];
       const { data: profiles } = await supabase
         .from('profiles')
         .select('id, username')
         .in('id', playerIds);
 
-      // Combine players with their usernames
       const playersWithUsernames = gamePlayers?.map(player => ({
         ...player,
         username: profiles?.find(p => p.id === player.player_id)?.username || 'Unknown'
       })) || [];
+
+      // Check win condition
+      const totalScore = Object.values(playerScorecard).reduce((sum, score) => sum + score, 0);
+      if (totalScore >= WIN_SCORE && game.status !== 'finished') {
+        await finishGameWithWinner();
+        showNotification({
+          type: 'win',
+          title: 'WINNER!',
+          message: `You reached ${WIN_SCORE} points and won the game!`,
+          points: totalScore
+        });
+        return;
+      }
 
       // Check if game should be finished (5 turns completed)
       if (game.current_round > MAX_TURNS && game.status !== 'finished') {
@@ -158,7 +203,19 @@ const Game = () => {
 
       // Check if it's the current user's turn
       const currentPlayer = playersWithUsernames[game.current_player_turn || 0];
-      setIsMyTurn(currentPlayer?.player_id === user?.id);
+      const newIsMyTurn = currentPlayer?.player_id === user?.id;
+      
+      if (newIsMyTurn && !isMyTurn) {
+        setTurnStartTime(new Date());
+        showNotification({
+          type: 'turn',
+          title: 'YOUR TURN!',
+          message: 'Time to roll the dice!'
+        });
+        soundManager.play('notification', 0.4);
+      }
+      
+      setIsMyTurn(newIsMyTurn);
 
       // Check if game is finished
       if (game.status === 'finished') {
@@ -189,8 +246,26 @@ const Game = () => {
         title: "Game Finished!",
         description: "Calculating final scores...",
       });
+      
+      soundManager.play('win', 0.5);
     } catch (error) {
       console.error('Error finishing game:', error);
+    }
+  };
+
+  const finishGameWithWinner = async () => {
+    try {
+      await supabase
+        .from('games')
+        .update({ 
+          status: 'finished',
+          finished_at: new Date().toISOString()
+        })
+        .eq('id', gameId);
+
+      soundManager.play('win', 0.7);
+    } catch (error) {
+      console.error('Error finishing game with winner:', error);
     }
   };
 
@@ -254,10 +329,13 @@ const Game = () => {
         })
         .eq('id', gameId);
 
-      toast({
-        title: "Game Started!",
-        description: "Let the chaos begin!",
+      showNotification({
+        type: 'achievement',
+        title: 'GAME STARTED!',
+        message: 'Let the chaos begin!'
       });
+      
+      soundManager.play('chaos', 0.4);
     } catch (error: any) {
       toast({
         title: "Error",
@@ -272,6 +350,7 @@ const Game = () => {
     
     setIsRolling(true);
     setRollsLeft(prev => prev - 1);
+    soundManager.play('roll', 0.4);
 
     // Animate dice rolling with multiple intermediate values
     const rollDuration = 1000;
@@ -318,33 +397,44 @@ const Game = () => {
     const sum = currentDice.reduce((a, b) => a + b, 0);
     const sortedDice = [...currentDice].sort();
 
+    // Apply chaos effects
+    let multiplier = 1;
+    chaosEventsApplied.forEach(event => {
+      if (event.effect?.type === 'score_multiplier') {
+        multiplier *= event.effect.value;
+      }
+    });
+
+    let baseScore = 0;
     switch (category) {
-      case 'ones': return (counts[1] || 0) * 1;
-      case 'twos': return (counts[2] || 0) * 2;
-      case 'threes': return (counts[3] || 0) * 3;
-      case 'fours': return (counts[4] || 0) * 4;
-      case 'fives': return (counts[5] || 0) * 5;
-      case 'sixes': return (counts[6] || 0) * 6;
+      case 'ones': baseScore = (counts[1] || 0) * 1; break;
+      case 'twos': baseScore = (counts[2] || 0) * 2; break;
+      case 'threes': baseScore = (counts[3] || 0) * 3; break;
+      case 'fours': baseScore = (counts[4] || 0) * 4; break;
+      case 'fives': baseScore = (counts[5] || 0) * 5; break;
+      case 'sixes': baseScore = (counts[6] || 0) * 6; break;
       case 'threeOfKind': 
-        return Object.values(counts).some(count => count >= 3) ? sum : 0;
+        baseScore = Object.values(counts).some(count => count >= 3) ? sum : 0; break;
       case 'fourOfKind': 
-        return Object.values(counts).some(count => count >= 4) ? sum : 0;
+        baseScore = Object.values(counts).some(count => count >= 4) ? sum : 0; break;
       case 'fullHouse': 
-        return Object.values(counts).includes(3) && Object.values(counts).includes(2) ? 25 : 0;
+        baseScore = Object.values(counts).includes(3) && Object.values(counts).includes(2) ? 25 : 0; break;
       case 'smallStraight': 
-        return [1,2,3,4].every(n => sortedDice.includes(n)) || 
+        baseScore = [1,2,3,4].every(n => sortedDice.includes(n)) || 
                [2,3,4,5].every(n => sortedDice.includes(n)) || 
-               [3,4,5,6].every(n => sortedDice.includes(n)) ? 30 : 0;
+               [3,4,5,6].every(n => sortedDice.includes(n)) ? 30 : 0; break;
       case 'largeStraight': 
-        return [1,2,3,4,5].every(n => sortedDice.includes(n)) || 
-               [2,3,4,5,6].every(n => sortedDice.includes(n)) ? 40 : 0;
+        baseScore = [1,2,3,4,5].every(n => sortedDice.includes(n)) || 
+               [2,3,4,5,6].every(n => sortedDice.includes(n)) ? 40 : 0; break;
       case 'chaos': 
-        return Object.values(counts).some(count => count === 5) ? 75 : 0;
+        baseScore = Object.values(counts).some(count => count === 5) ? 75 : 0; break;
       case 'chance': 
-        return sum;
+        baseScore = sum; break;
       default: 
-        return 0;
+        baseScore = 0;
     }
+    
+    return Math.floor(baseScore * multiplier);
   };
 
   const scoreCategory = async (category: string) => {
@@ -376,6 +466,17 @@ const Game = () => {
           score_earned: score
         });
 
+      // Show score notification
+      if (score > 0) {
+        showNotification({
+          type: 'score',
+          title: 'SCORED!',
+          message: `Great job on that ${category}!`,
+          points: score
+        });
+        soundManager.play('score', 0.5);
+      }
+
       // Advance to next player's turn
       await supabase.rpc('advance_game_turn', { game_uuid: gameId });
 
@@ -383,17 +484,66 @@ const Game = () => {
       setRollsLeft(3);
       setSelectedDice([false, false, false, false, false]);
       setCurrentDice([1, 2, 3, 4, 5]);
-
-      toast({
-        title: "Score Recorded!",
-        description: `You scored ${score} points in ${category}`,
-      });
+      setTurnStartTime(null);
 
     } catch (error: any) {
       console.error('Error scoring category:', error);
       toast({
         title: "Error",
         description: "Failed to record score",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleTimeUp = useCallback(() => {
+    if (isMyTurn && rollsLeft < 3) {
+      // Auto-score in chance category if no other category available
+      const availableCategories = [
+        'ones', 'twos', 'threes', 'fours', 'fives', 'sixes',
+        'threeOfKind', 'fourOfKind', 'fullHouse', 'smallStraight', 
+        'largeStraight', 'chaos', 'chance'
+      ].filter(cat => playerScorecard[cat] === undefined);
+      
+      if (availableCategories.length > 0) {
+        const bestCategory = availableCategories.reduce((best, current) => {
+          return calculateScore(current) > calculateScore(best) ? current : best;
+        });
+        scoreCategory(bestCategory);
+      }
+    }
+    
+    soundManager.play('tick', 0.3);
+    showNotification({
+      type: 'turn',
+      title: 'TIME UP!',
+      message: 'Your turn has been automatically completed.'
+    });
+  }, [isMyTurn, rollsLeft, playerScorecard]);
+
+  const handleEmote = async (emote: string) => {
+    // In a real implementation, you'd broadcast this emote to other players
+    soundManager.play('emote', 0.3);
+    console.log(`Player ${user?.id} sent emote: ${emote}`);
+  };
+
+  const leaveGame = async () => {
+    try {
+      await supabase
+        .from('game_players')
+        .delete()
+        .eq('game_id', gameId)
+        .eq('player_id', user?.id);
+
+      navigate('/lobby');
+      toast({
+        title: "Left Game",
+        description: "You have left the game successfully.",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to leave game",
         variant: "destructive",
       });
     }
@@ -411,21 +561,55 @@ const Game = () => {
     return <GameOver gameId={gameId!} players={finalScores} />;
   }
 
+  const totalScore = Object.values(playerScorecard).reduce((sum, score) => sum + score, 0);
+  const isCloseToWin = totalScore >= WIN_SCORE * 0.8;
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-indigo-900 to-pink-900 p-4 font-quicksand">
       <div className="max-w-7xl mx-auto">
+        {/* Game Timer */}
+        <GameTimer 
+          isActive={isMyTurn && gameState.status === 'active'} 
+          onTimeUp={handleTimeUp}
+          duration={60}
+        />
+
+        {/* Game Notification */}
+        <GameNotification 
+          notification={notification}
+          onClose={() => setNotification(null)}
+        />
+
         {/* Game Header */}
         <motion.div
           initial={{ opacity: 0, y: -50 }}
           animate={{ opacity: 1, y: 0 }}
           className="text-center mb-6"
         >
-          <h1 className="font-bangers text-6xl text-white mb-2 flex items-center justify-center gap-2">
-            <Crown className="text-yellow-400" />
-            {gameState.name}
-            <Crown className="text-yellow-400" />
-          </h1>
-          <div className="flex justify-center items-center gap-4 text-purple-200">
+          <div className="flex justify-between items-center mb-4">
+            <Button
+              onClick={leaveGame}
+              variant="outline"
+              size="sm"
+              className="border-red-500/50 text-red-300 hover:bg-red-800/50"
+            >
+              <ExitIcon className="w-4 h-4 mr-2" />
+              Leave
+            </Button>
+
+            <h1 className="font-bangers text-4xl md:text-6xl text-white flex items-center gap-2">
+              <Crown className="text-yellow-400" />
+              {gameState.name}
+              <Crown className="text-yellow-400" />
+            </h1>
+
+            <PlayerEmotes 
+              onEmote={handleEmote}
+              disabled={!isMyTurn}
+            />
+          </div>
+
+          <div className="flex justify-center items-center gap-4 text-purple-200 flex-wrap">
             <Badge variant="secondary" className="bg-purple-800/50 font-quicksand">
               Turn {gameState.current_round}/{gameState.max_rounds}
             </Badge>
@@ -433,13 +617,28 @@ const Game = () => {
               <Users className="w-4 h-4 mr-1" />
               {gameState.players.length} Players
             </Badge>
+            {isCloseToWin && (
+              <Badge className="bg-yellow-600 animate-pulse font-bangers">
+                <AlertTriangle className="w-4 h-4 mr-1" />
+                CLOSE TO WIN!
+              </Badge>
+            )}
             {gameState.status === 'waiting' && gameState.host_id === user?.id && (
-              <Button onClick={startGame} className="bg-green-600 hover:bg-green-700 font-quicksand font-semibold">
+              <Button onClick={startGame} className="bg-green-600 hover:bg-green-700 font-bangers">
                 <Sparkles className="w-4 h-4 mr-2" />
                 Start Game
               </Button>
             )}
           </div>
+          
+          {gameState.host_id === user?.id && (
+            <div className="mt-4">
+              <RoomInvite 
+                gameId={gameState.id}
+                isHost={true}
+              />
+            </div>
+          )}
         </motion.div>
 
         <div className="grid lg:grid-cols-3 gap-6">
@@ -454,8 +653,8 @@ const Game = () => {
               </CardHeader>
               <CardContent className="space-y-3">
                 {gameState.players.map((player, index) => {
-                  const totalScore = Object.values(playerScorecard).reduce((sum, score) => sum + score, 0);
                   const isCurrentTurn = index === gameState.current_player_turn && gameState.status === 'active';
+                  const displayScore = player.player_id === user?.id ? totalScore : (player.score || 0);
                   
                   return (
                     <motion.div
@@ -470,16 +669,24 @@ const Game = () => {
                         <span className="font-quicksand text-white font-medium flex items-center gap-2">
                           {player.player_id === gameState.host_id && <Crown className="h-4 w-4 text-yellow-400" />}
                           {player.username || `Player ${index + 1}`}
-                          {isCurrentTurn && <Timer className="h-4 w-4 text-yellow-400" />}
+                          {isCurrentTurn && <Timer className="h-4 w-4 text-yellow-400 animate-pulse" />}
+                          {player.player_id === user?.id && <span className="text-xs text-purple-300">(You)</span>}
                         </span>
-                        <span className="font-bangers text-2xl text-purple-300">
-                          {player.player_id === user?.id ? totalScore : (player.score || 0)}
+                        <span className={`font-bangers text-2xl ${
+                          displayScore >= WIN_SCORE ? 'text-yellow-400 animate-pulse' : 'text-purple-300'
+                        }`}>
+                          {displayScore}
                         </span>
                       </div>
                       <Progress 
-                        value={Math.min((player.player_id === user?.id ? totalScore : (player.score || 0)) / 10, 100)} 
+                        value={Math.min((displayScore / WIN_SCORE) * 100, 100)} 
                         className="mt-2 h-2"
                       />
+                      {displayScore >= WIN_SCORE && (
+                        <div className="text-yellow-400 text-xs font-bangers animate-pulse mt-1">
+                          WINNER!
+                        </div>
+                      )}
                     </motion.div>
                   );
                 })}
@@ -491,11 +698,13 @@ const Game = () => {
               gameId={gameId!} 
               currentTurn={gameState.current_round} 
               onChaosTriggered={(event) => {
-                toast({
-                  title: "🔥 CHAOS EVENT! 🔥",
-                  description: event.name,
-                  variant: "destructive",
+                setChaosEventsApplied(prev => [...prev, event]);
+                showNotification({
+                  type: 'chaos',
+                  title: '🔥 CHAOS EVENT! 🔥',
+                  message: event.name
                 });
+                soundManager.play('chaos', 0.6);
               }}
             />
           </div>
@@ -516,8 +725,8 @@ const Game = () => {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {/* 3D Dice Grid - Fixed spacing */}
-                  <div className="flex justify-center gap-2 mb-6">
+                  {/* 3D Dice Grid */}
+                  <div className="flex justify-center gap-1 mb-6">
                     {currentDice.map((value, index) => (
                       <Dice3D
                         key={index}
@@ -629,9 +838,20 @@ const Game = () => {
                 <div className="mt-4 pt-4 border-t border-purple-500/30">
                   <div className="flex justify-between items-center text-lg font-bold">
                     <span className="font-quicksand text-white">Total Score:</span>
-                    <span className="font-bangers text-2xl text-yellow-400">
-                      {Object.values(playerScorecard).reduce((sum, score) => sum + score, 0)}
+                    <span className={`font-bangers text-2xl ${
+                      totalScore >= WIN_SCORE ? 'text-yellow-400 animate-pulse' : 'text-yellow-400'
+                    }`}>
+                      {totalScore}
                     </span>
+                  </div>
+                  <div className="mt-2">
+                    <Progress 
+                      value={(totalScore / WIN_SCORE) * 100} 
+                      className="h-3"
+                    />
+                    <div className="text-center text-purple-300 text-xs mt-1 font-quicksand">
+                      {WIN_SCORE - totalScore > 0 ? `${WIN_SCORE - totalScore} to win` : 'YOU WIN!'}
+                    </div>
                   </div>
                 </div>
               </CardContent>
