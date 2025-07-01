@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Separator } from "@/components/ui/separator";
 import { 
   Shield, 
   Users, 
@@ -23,7 +25,9 @@ import {
   Database,
   BarChart3,
   AlertTriangle,
-  RefreshCw
+  RefreshCw,
+  Volume2,
+  Upload
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -753,6 +757,62 @@ const Admin = () => {
                       <div>
                         <Label className="text-purple-200 font-quicksand">Win Condition Score</Label>
                         <Input defaultValue="150" className="bg-purple-900/30 border-purple-500/50 text-white font-quicksand" />
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Sound Effects Management */}
+                  <Card className="bg-gradient-to-r from-green-900/20 to-emerald-900/20 border-green-500/30">
+                    <CardHeader>
+                      <CardTitle className="text-white font-bangers flex items-center gap-2">
+                        <Volume2 className="text-green-400" />
+                        Sound Effects
+                      </CardTitle>
+                      <CardDescription className="text-green-200 font-quicksand">
+                        Manage game audio files
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {[
+                        { name: 'Dice Roll', file: 'dice-roll.mp3', description: 'Sound when dice are rolled' },
+                        { name: 'Score', file: 'score.mp3', description: 'Sound when points are scored' },
+                        { name: 'Chaos Event', file: 'chaos.mp3', description: 'Sound when chaos event triggers' },
+                        { name: 'Victory', file: 'win.mp3', description: 'Sound when game is won' },
+                        { name: 'Timer Tick', file: 'tick.mp3', description: 'Sound for countdown timer' },
+                        { name: 'Notification', file: 'notification.mp3', description: 'General notification sound' },
+                        { name: 'Emote', file: 'emote.mp3', description: 'Sound for player emotes' }
+                      ].map((sound, index) => (
+                        <div key={index} className="flex items-center justify-between p-2 bg-green-900/20 rounded border border-green-500/30">
+                          <div>
+                            <div className="text-white font-quicksand font-medium">{sound.name}</div>
+                            <div className="text-green-300 text-xs font-quicksand">{sound.description}</div>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button size="sm" variant="outline" className="border-green-500/50 text-green-300 font-quicksand">
+                              <Volume2 className="w-3 h-3" />
+                            </Button>
+                            <Button size="sm" variant="outline" className="border-green-500/50 text-green-300 font-quicksand">
+                              <Upload className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                      
+                      <Separator className="bg-green-500/30" />
+                      
+                      <div>
+                        <Label className="text-green-200 font-quicksand mb-2 block">Background Music</Label>
+                        <div className="space-y-2">
+                          <Input 
+                            type="file" 
+                            accept="audio/*"
+                            className="bg-green-900/30 border-green-500/50 text-white font-quicksand" 
+                          />
+                          <div className="flex items-center gap-2">
+                            <Switch className="data-[state=checked]:bg-green-600" />
+                            <Label className="text-green-200 font-quicksand">Enable Background Music</Label>
+                          </div>
+                        </div>
                       </div>
                     </CardContent>
                   </Card>

@@ -49,16 +49,16 @@ const Index = () => {
               >
                 <motion.div whileHover={{ scale: 1.05, rotate: 2 }} whileTap={{ scale: 0.95 }}>
                   <Link to="/lobby">
-                    <Card className="bg-gradient-to-br from-green-600/30 to-emerald-600/30 border-green-400/60 backdrop-blur-sm cursor-pointer h-full hover:shadow-2xl hover:shadow-green-400/20 transition-all duration-300">
+                    <Card className="bg-gradient-to-br from-purple-800/60 to-indigo-800/60 border-purple-400/60 backdrop-blur-sm cursor-pointer h-full hover:shadow-2xl hover:shadow-purple-400/20 transition-all duration-300">
                       <CardContent className="p-6 text-center">
                         <motion.div
                           animate={{ rotate: [0, 5, -5, 0] }}
                           transition={{ duration: 2, repeat: Infinity }}
                         >
-                          <Play className="h-12 w-12 text-green-300 mx-auto mb-4 drop-shadow-lg" />
+                          <Play className="h-12 w-12 text-purple-300 mx-auto mb-4 drop-shadow-lg" />
                         </motion.div>
                         <h3 className="font-bangers text-2xl text-white mb-2 drop-shadow-md">DIVE IN!</h3>
-                        <p className="text-green-200 text-sm font-medium">Join the chaos now</p>
+                        <p className="text-purple-200 text-sm font-medium">Join the chaos now</p>
                       </CardContent>
                     </Card>
                   </Link>
@@ -66,16 +66,16 @@ const Index = () => {
 
                 <motion.div whileHover={{ scale: 1.05, rotate: -2 }} whileTap={{ scale: 0.95 }}>
                   <Link to="/friends">
-                    <Card className="bg-gradient-to-br from-blue-600/30 to-cyan-600/30 border-blue-400/60 backdrop-blur-sm cursor-pointer h-full hover:shadow-2xl hover:shadow-blue-400/20 transition-all duration-300">
+                    <Card className="bg-gradient-to-br from-pink-800/60 to-red-800/60 border-pink-400/60 backdrop-blur-sm cursor-pointer h-full hover:shadow-2xl hover:shadow-pink-400/20 transition-all duration-300">
                       <CardContent className="p-6 text-center">
                         <motion.div
                           animate={{ scale: [1, 1.1, 1] }}
                           transition={{ duration: 1.5, repeat: Infinity }}
                         >
-                          <UserPlus className="h-12 w-12 text-blue-300 mx-auto mb-4 drop-shadow-lg" />
+                          <UserPlus className="h-12 w-12 text-pink-300 mx-auto mb-4 drop-shadow-lg" />
                         </motion.div>
                         <h3 className="font-bangers text-2xl text-white mb-2 drop-shadow-md">ALLIES</h3>
-                        <p className="text-blue-200 text-sm font-medium">Gather your crew</p>
+                        <p className="text-pink-200 text-sm font-medium">Gather your crew</p>
                       </CardContent>
                     </Card>
                   </Link>
@@ -83,16 +83,16 @@ const Index = () => {
 
                 <motion.div whileHover={{ scale: 1.05, rotate: 2 }} whileTap={{ scale: 0.95 }}>
                   <Link to="/leaderboard">
-                    <Card className="bg-gradient-to-br from-yellow-600/30 to-orange-600/30 border-yellow-400/60 backdrop-blur-sm cursor-pointer h-full hover:shadow-2xl hover:shadow-yellow-400/20 transition-all duration-300">
+                    <Card className="bg-gradient-to-br from-amber-800/60 to-orange-800/60 border-amber-400/60 backdrop-blur-sm cursor-pointer h-full hover:shadow-2xl hover:shadow-amber-400/20 transition-all duration-300">
                       <CardContent className="p-6 text-center">
                         <motion.div
                           animate={{ rotate: [0, 10, -10, 0] }}
                           transition={{ duration: 3, repeat: Infinity }}
                         >
-                          <Trophy className="h-12 w-12 text-yellow-300 mx-auto mb-4 drop-shadow-lg" />
+                          <Trophy className="h-12 w-12 text-amber-300 mx-auto mb-4 drop-shadow-lg" />
                         </motion.div>
                         <h3 className="font-bangers text-2xl text-white mb-2 drop-shadow-md">GLORY</h3>
-                        <p className="text-yellow-200 text-sm font-medium">Claim your throne</p>
+                        <p className="text-amber-200 text-sm font-medium">Claim your throne</p>
                       </CardContent>
                     </Card>
                   </Link>
@@ -100,16 +100,16 @@ const Index = () => {
 
                 <motion.div whileHover={{ scale: 1.05, rotate: -2 }} whileTap={{ scale: 0.95 }}>
                   <Link to="/settings">
-                    <Card className="bg-gradient-to-br from-purple-600/30 to-violet-600/30 border-purple-400/60 backdrop-blur-sm cursor-pointer h-full hover:shadow-2xl hover:shadow-purple-400/20 transition-all duration-300">
+                    <Card className="bg-gradient-to-br from-teal-800/60 to-cyan-800/60 border-teal-400/60 backdrop-blur-sm cursor-pointer h-full hover:shadow-2xl hover:shadow-teal-400/20 transition-all duration-300">
                       <CardContent className="p-6 text-center">
                         <motion.div
                           animate={{ rotate: [0, 180, 360] }}
                           transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
                         >
-                          <Settings className="h-12 w-12 text-purple-300 mx-auto mb-4 drop-shadow-lg" />
+                          <Settings className="h-12 w-12 text-teal-300 mx-auto mb-4 drop-shadow-lg" />
                         </motion.div>
                         <h3 className="font-bangers text-2xl text-white mb-2 drop-shadow-md">TWEAK</h3>
-                        <p className="text-purple-200 text-sm font-medium">Customize madness</p>
+                        <p className="text-teal-200 text-sm font-medium">Customize madness</p>
                       </CardContent>
                     </Card>
                   </Link>
@@ -193,25 +193,25 @@ const Index = () => {
                 icon: Users,
                 title: "Multiplayer Mayhem",
                 description: "Battle up to 4 players in real-time madness. Challenge friends or discover new rivals in our chaotic matchmaking!",
-                color: "text-blue-400",
-                gradient: "from-blue-600/20 to-cyan-600/20",
-                border: "border-blue-500/50"
+                color: "text-cyan-400",
+                gradient: "from-cyan-800/50 to-blue-800/50",
+                border: "border-cyan-500/50"
               },
               {
                 icon: Zap,
                 title: "Reality-Bending Events",
                 description: "Experience dice that transform, rules that flip, and reality that bends with every unpredictable chaos event!",
                 color: "text-red-400",
-                gradient: "from-red-600/20 to-orange-600/20",
+                gradient: "from-red-800/50 to-pink-800/50",
                 border: "border-red-500/50"
               },
               {
                 icon: Trophy,
                 title: "Strategic Chaos",
                 description: "Master the art of controlled chaos. Adapt your strategy as the rules shift beneath your feet!",
-                color: "text-yellow-400",
-                gradient: "from-yellow-600/20 to-orange-600/20",
-                border: "border-yellow-500/50"
+                color: "text-amber-400",
+                gradient: "from-amber-800/50 to-orange-800/50",
+                border: "border-amber-500/50"
               }
             ].map((feature, index) => (
               <motion.div

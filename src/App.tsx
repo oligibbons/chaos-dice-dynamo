@@ -12,6 +12,7 @@ import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Lobby from "./pages/Lobby";
 import Game from "./pages/Game";
+import Settings from "./pages/Settings";
 import Admin from "./pages/Admin";
 import Confirmation from "./pages/Confirmation";
 import NotFound from "./pages/NotFound";
@@ -39,6 +40,11 @@ const App = () => (
               <Route path="/game/:gameId" element={
                 <ProtectedRoute>
                   <Game />
+                </ProtectedRoute>
+              } />
+              <Route path="/settings" element={
+                <ProtectedRoute>
+                  <Settings />
                 </ProtectedRoute>
               } />
               <Route path="/admin" element={
