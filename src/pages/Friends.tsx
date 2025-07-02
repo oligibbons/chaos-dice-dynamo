@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Users, UserPlus, MessageSquare, Gamepad2, Search, Crown } from "lucide-react";
+import { Users, UserPlus, MessageSquare, Gamepad2, Search, Crown, UserMinus, RefreshCw } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -16,6 +16,12 @@ interface Friend {
   username: string;
   status: 'online' | 'offline' | 'in-game';
   last_seen?: string;
+  friendshipId?: string;
+}
+
+interface SearchResult {
+  id: string;
+  username: string;
 }
 
 const Friends = () => {
@@ -24,27 +30,102 @@ const Friends = () => {
   const [friends, setFriends] = useState<Friend[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
-  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [friendRequests, setFriendRequests] = useState<any[]>([]);
 
   useEffect(() => {
     if (user) {
       fetchFriends();
+      fetchFriendRequests();
+      setupRealtimeSubscription();
     }
   }, [user]);
 
   const fetchFriends = async () => {
     try {
-      // For now, we'll simulate friends data since we don't have a friends table yet
-      // In a real implementation, you'd fetch from a friends table
-      const mockFriends: Friend[] = [
-        { id: '1', username: 'ChaosMaster', status: 'online' },
-        { id: '2', username: 'DiceWizard', status: 'in-game' },
-        { id: '3', username: 'LuckyRoller', status: 'offline', last_seen: '2 hours ago' },
-      ];
-      setFriends(mockFriends);
-    } catch (error) {
+      console.log('Fetching friends...');
+      
+      const { data, error } = await supabase
+        .from('friends')
+        .select(`
+          id,
+          requester_id,
+          addressee_id,
+          status,
+          profiles!friends_requester_id_fkey(id, username),
+          profiles_addressee:profiles!friends_addressee_id_fkey(id, username)
+        `)
+        .eq('status', 'accepted')
+        .or(`requester_id.eq.${user!.id},addressee_id.eq.${user!.id}`);
+
+      if (error) {
+        console.error('Friends fetch error:', error);
+        throw error;
+      }
+
+      console.log('Friends data:', data);
+
+      const friendsList = data?.map(friendship => {
+        const isRequester = friendship.requester_id === user!.id;
+        const friendProfile = isRequester ? friendship.profiles_addressee : friendship.profiles;
+        
+        return {
+          id: friendProfile?.id || '',
+          username: friendProfile?.username || 'Unknown User',
+          status: 'offline' as const, // We'll implement presence later
+          friendshipId: friendship.id
+        };
+      }) || [];
+
+      setFriends(friendsList);
+    } catch (error: any) {
       console.error('Error fetching friends:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load friends",
+        variant: "destructive",
+      });
     }
+  };
+
+  const fetchFriendRequests = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('friends')
+        .select(`
+          id,
+          requester_id,
+          status,
+          created_at,
+          profiles!friends_requester_id_fkey(id, username)
+        `)
+        .eq('addressee_id', user!.id)
+        .eq('status', 'pending');
+
+      if (error) throw error;
+
+      setFriendRequests(data || []);
+    } catch (error: any) {
+      console.error('Error fetching friend requests:', error);
+    }
+  };
+
+  const setupRealtimeSubscription = () => {
+    const channel = supabase
+      .channel('friends-changes')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'friends'
+      }, () => {
+        fetchFriends();
+        fetchFriendRequests();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   };
 
   const searchUsers = async () => {
@@ -55,15 +136,33 @@ const Friends = () => {
 
     setLoading(true);
     try {
+      // Get existing friend relationships to filter out
+      const { data: existingFriends } = await supabase
+        .from('friends')
+        .select('requester_id, addressee_id')
+        .or(`requester_id.eq.${user!.id},addressee_id.eq.${user!.id}`);
+
+      const friendIds = new Set();
+      existingFriends?.forEach(friendship => {
+        if (friendship.requester_id === user!.id) {
+          friendIds.add(friendship.addressee_id);
+        } else {
+          friendIds.add(friendship.requester_id);
+        }
+      });
+
       const { data, error } = await supabase
         .from('profiles')
         .select('id, username')
         .ilike('username', `%${searchQuery}%`)
-        .neq('id', user?.id)
+        .neq('id', user!.id)
         .limit(10);
 
       if (error) throw error;
-      setSearchResults(data || []);
+
+      // Filter out existing friends
+      const filtered = data?.filter(profile => !friendIds.has(profile.id)) || [];
+      setSearchResults(filtered);
     } catch (error: any) {
       console.error('Error searching users:', error);
       toast({
@@ -76,40 +175,64 @@ const Friends = () => {
     }
   };
 
-  const addFriend = async (friendId: string, username: string) => {
+  const sendFriendRequest = async (friendId: string, username: string) => {
     try {
-      // In a real implementation, you'd add to a friends table
+      const { error } = await supabase
+        .from('friends')
+        .insert({
+          requester_id: user!.id,
+          addressee_id: friendId,
+          status: 'pending'
+        });
+
+      if (error) throw error;
+
       toast({
         title: "Friend Request Sent!",
         description: `Friend request sent to ${username}`,
       });
+      
       setSearchQuery('');
       setSearchResults([]);
     } catch (error: any) {
-      console.error('Error adding friend:', error);
+      console.error('Error sending friend request:', error);
+      
+      if (error.code === '23505') {
+        toast({
+          title: "Error",
+          description: "Friend request already sent or you are already friends",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Error",
+          description: "Failed to send friend request",
+          variant: "destructive",
+        });
+      }
+    }
+  };
+
+  const removeFriend = async (friendshipId: string, friendName: string) => {
+    try {
+      const { error } = await supabase
+        .from('friends')
+        .delete()
+        .eq('id', friendshipId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Friend Removed",
+        description: `${friendName} has been removed from your friends`,
+      });
+    } catch (error: any) {
+      console.error('Error removing friend:', error);
       toast({
         title: "Error",
-        description: "Failed to send friend request",
+        description: "Failed to remove friend",
         variant: "destructive",
       });
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'online': return 'bg-green-600';
-      case 'in-game': return 'bg-blue-600';
-      case 'offline': return 'bg-gray-600';
-      default: return 'bg-gray-600';
-    }
-  };
-
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'online': return 'Online';
-      case 'in-game': return 'In Game';
-      case 'offline': return 'Offline';
-      default: return 'Unknown';
     }
   };
 
@@ -120,11 +243,63 @@ const Friends = () => {
         <motion.div 
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex items-center gap-3 mb-8"
+          className="flex items-center justify-between mb-8"
         >
-          <Users className="text-blue-400 h-8 w-8" />
-          <h1 className="font-bangers text-5xl text-white">Friends</h1>
+          <div className="flex items-center gap-3">
+            <Users className="text-blue-400 h-8 w-8" />
+            <h1 className="font-bangers text-5xl text-white">Friends</h1>
+          </div>
+          <Button
+            onClick={() => {
+              fetchFriends();
+              fetchFriendRequests();
+            }}
+            className="bg-blue-600 hover:bg-blue-700 font-quicksand font-semibold"
+          >
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh
+          </Button>
         </motion.div>
+
+        {/* Friend Requests */}
+        {friendRequests.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6"
+          >
+            <Card className="bg-black/50 border-yellow-500/50 backdrop-blur-sm">
+              <CardHeader>
+                <CardTitle className="font-bangers text-white flex items-center gap-2 text-2xl">
+                  <Users className="h-5 w-5" />
+                  Pending Friend Requests ({friendRequests.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {friendRequests.map((request) => (
+                    <div key={request.id} className="flex items-center justify-between p-3 bg-yellow-900/20 rounded-lg border border-yellow-500/30">
+                      <div className="flex items-center gap-3">
+                        <Avatar className="h-10 w-10">
+                          <AvatarFallback className="bg-gradient-to-r from-yellow-500 to-orange-500 text-white font-bangers">
+                            {request.profiles?.username?.[0]?.toUpperCase() || 'U'}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <p className="text-white font-quicksand font-medium">{request.profiles?.username}</p>
+                          <p className="text-yellow-300 text-sm font-quicksand">
+                            Sent {new Date(request.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                      <p className="text-yellow-200 text-sm font-quicksand">Check notifications to respond</p>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
 
         {/* Add Friend Section */}
         <motion.div
@@ -139,7 +314,7 @@ const Friends = () => {
                 Add Friends
               </CardTitle>
               <CardDescription className="text-blue-200 font-quicksand">
-                Search for players by username to add them as friends
+                Search for players by username to send them friend requests
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -179,11 +354,11 @@ const Friends = () => {
                       </div>
                       <Button
                         size="sm"
-                        onClick={() => addFriend(result.id, result.username)}
+                        onClick={() => sendFriendRequest(result.id, result.username)}
                         className="bg-green-600 hover:bg-green-700 font-quicksand"
                       >
                         <UserPlus className="h-4 w-4 mr-1" />
-                        Add
+                        Add Friend
                       </Button>
                     </div>
                   ))}
@@ -227,26 +402,18 @@ const Friends = () => {
                         <div className="relative">
                           <Avatar className="h-12 w-12">
                             <AvatarFallback className="bg-gradient-to-r from-blue-500 to-purple-500 text-white font-bangers">
-                              {friend.username?.[0]?.toUpperCase() || 'U'}
+                              {friend.username[0]?.toUpperCase() || 'U'}
                             </AvatarFallback>
                           </Avatar>
-                          <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full ${getStatusColor(friend.status)} border-2 border-black`} />
+                          <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-gray-600 border-2 border-black" />
                         </div>
                         <div>
                           <div className="flex items-center gap-2">
                             <h3 className="text-white font-quicksand font-semibold">{friend.username}</h3>
-                            {friend.status === 'in-game' && <Crown className="h-4 w-4 text-yellow-400" />}
                           </div>
-                          <div className="flex items-center gap-2">
-                            <Badge className={`${getStatusColor(friend.status)} text-white font-quicksand text-xs`}>
-                              {getStatusText(friend.status)}
-                            </Badge>
-                            {friend.last_seen && (
-                              <span className="text-blue-300 text-sm font-quicksand">
-                                Last seen {friend.last_seen}
-                              </span>
-                            )}
-                          </div>
+                          <Badge className="bg-gray-600 text-white font-quicksand text-xs">
+                            Offline
+                          </Badge>
                         </div>
                       </div>
                       
@@ -255,7 +422,7 @@ const Friends = () => {
                           size="sm"
                           variant="outline"
                           className="border-blue-500/50 text-blue-200 hover:bg-blue-600/20 font-quicksand"
-                          disabled={friend.status === 'offline'}
+                          disabled
                         >
                           <MessageSquare className="h-4 w-4 mr-1" />
                           Chat
@@ -263,10 +430,18 @@ const Friends = () => {
                         <Button
                           size="sm"
                           className="bg-purple-600 hover:bg-purple-700 font-quicksand"
-                          disabled={friend.status === 'offline'}
+                          disabled
                         >
                           <Gamepad2 className="h-4 w-4 mr-1" />
                           Invite
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => removeFriend(friend.friendshipId!, friend.username)}
+                          className="border-red-500/50 text-red-300 hover:bg-red-600/20 font-quicksand"
+                        >
+                          <UserMinus className="h-4 w-4" />
                         </Button>
                       </div>
                     </motion.div>
