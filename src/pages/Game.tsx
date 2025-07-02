@@ -10,12 +10,14 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useSoundManager } from "@/components/SoundManager";
+import { useChaosEventHandler } from "@/hooks/useChaosEventHandler";
 import ChaoticBackground from "@/components/ChaoticBackground";
 import GameTimer from "@/components/GameTimer";
 import ChaosEventDisplay from "@/components/ChaosEventDisplay";
 import GameNotification from "@/components/GameNotification";
 import PlayerEmotes from "@/components/PlayerEmotes";
 import Dice3D from "@/components/Dice3D";
+import ChaosEvents from "@/components/ChaosEvents";
 
 interface ChaosEvent {
   id: string;
@@ -72,6 +74,11 @@ const Game = () => {
   } | null>(null);
   const [currentPlayerUsername, setCurrentPlayerUsername] = useState<string>('');
   const [isRolling, setIsRolling] = useState(false);
+  const [wildNumberSelection, setWildNumberSelection] = useState<number | null>(null);
+  const [showWildNumberDialog, setShowWildNumberDialog] = useState(false);
+
+  // Initialize chaos event handler
+  const chaosHandler = useChaosEventHandler(gameId || '', user?.id || '');
 
   useEffect(() => {
     if (gameId && user) {
@@ -205,17 +212,30 @@ const Game = () => {
   };
 
   const rollDice = () => {
+    if (!isMyTurn) return;
+    
     setIsRolling(true);
-    const newDice = dice.map((die, index) => 
-      selectedDice[index] ? die : Math.floor(Math.random() * 6) + 1
-    );
+    
+    // Use chaos-modified dice rolling
+    const newDice = chaosHandler.rollWithChaosModifications(5);
+    
+    // Apply selection logic for rerolls
+    const finalDice = rerollCount > 0 ? 
+      dice.map((die, index) => selectedDice[index] ? die : newDice[index]) : 
+      newDice;
     
     // Simulate rolling animation
     setTimeout(() => {
-      setDice(newDice);
+      const modifiedDice = chaosHandler.modifyDiceRoll(finalDice);
+      setDice(modifiedDice);
       setRerollCount(prev => prev + 1);
       setIsRolling(false);
       soundManager.play('roll');
+      
+      // Store last die for Time Warp Token effect
+      if (modifiedDice.length > 0) {
+        chaosHandler.setPreviousPlayerDie(modifiedDice[modifiedDice.length - 1]);
+      }
     }, 1000);
   };
 
@@ -225,6 +245,32 @@ const Game = () => {
     const newSelected = [...selectedDice];
     newSelected[index] = !newSelected[index];
     setSelectedDice(newSelected);
+  };
+
+  const handleChaosEventTriggered = (event: ChaosEvent) => {
+    chaosHandler.applyChaosEvent(event);
+    
+    // Handle special chaos events that need immediate action
+    if (event.effect.type === 'wild_number') {
+      setShowWildNumberDialog(true);
+    }
+    
+    setNotification({
+      id: `chaos-${Date.now()}`,
+      type: 'chaos',
+      title: '🌀 CHAOS EVENT!',
+      message: event.name,
+    });
+  };
+
+  const selectWildNumber = (number: number) => {
+    setWildNumberSelection(number);
+    chaosHandler.setWildNumber(number);
+    setShowWildNumberDialog(false);
+    toast({
+      title: "Wild Number Selected!",
+      description: `You chose ${number} as your wild number. Remember: -5 points penalty!`,
+    });
   };
 
   const leaveGame = async () => {
@@ -303,6 +349,35 @@ const Game = () => {
     <div className="min-h-screen font-quicksand relative overflow-hidden">
       <ChaoticBackground />
       
+      {/* Wild Number Selection Dialog */}
+      {showWildNumberDialog && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <Card className="bg-purple-900/90 border-purple-400 backdrop-blur-md">
+            <CardHeader>
+              <CardTitle className="text-white font-bangers text-center">
+                🎲 NUMERICAL ANARCHY! 🎲
+              </CardTitle>
+              <CardDescription className="text-purple-200 text-center">
+                Choose your wild number (1-6). Remember: -5 points penalty!
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-3 gap-3">
+                {[1, 2, 3, 4, 5, 6].map(num => (
+                  <Button
+                    key={num}
+                    onClick={() => selectWildNumber(num)}
+                    className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 font-bangers text-lg"
+                  >
+                    {num}
+                  </Button>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+      
       <div className="relative z-10 p-2 sm:p-4 max-w-7xl mx-auto">
         {/* Mobile-optimized Game Header */}
         <motion.div
@@ -376,6 +451,11 @@ const Game = () => {
                             Rerolls: {rerollCount}/3
                           </span>
                           <PlayerEmotes onEmote={handleEmote} disabled={!isMyTurn} />
+                          {wildNumberSelection && (
+                            <Badge className="bg-purple-600 text-white">
+                              Wild: {wildNumberSelection}
+                            </Badge>
+                          )}
                         </div>
                         <Progress value={(rerollCount / 3) * 100} className="w-full h-2" />
                       </div>
@@ -407,7 +487,7 @@ const Game = () => {
                   }}
                   transition={{ duration: 3, repeat: Infinity }}
                 >
-                  ✨ MAGIC DICE ✨
+                  ✨ CHAOTIC DICE ✨
                 </motion.h3>
                 
                 <div className="flex flex-wrap justify-center gap-3 sm:gap-6 mb-8">
@@ -434,9 +514,24 @@ const Game = () => {
                           <Star className="h-4 w-4 text-yellow-400" />
                         </motion.div>
                       )}
+                      {chaosHandler.chaosState.activeDiceModifications.binaryDice?.index === index && (
+                        <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2">
+                          <Badge className="bg-red-600 text-white text-xs">Binary!</Badge>
+                        </div>
+                      )}
                     </motion.div>
                   ))}
                 </div>
+                
+                {/* Chaos Status Indicators */}
+                {(chaosHandler.chaosState.activeDiceModifications.minValue !== undefined || 
+                  chaosHandler.chaosState.activeDiceModifications.maxValue !== undefined) && (
+                  <div className="text-center mb-4">
+                    <Badge className="bg-gradient-to-r from-red-600 to-orange-600 text-white">
+                      Dice Range: {chaosHandler.chaosState.activeDiceModifications.minValue}-{chaosHandler.chaosState.activeDiceModifications.maxValue}
+                    </Badge>
+                  </div>
+                )}
                 
                 {isMyTurn && rerollCount < 3 && (
                   <div className="text-center">
@@ -534,7 +629,11 @@ const Game = () => {
             </Card>
 
             {/* Chaos Events */}
-            <ChaosEventDisplay events={gameState.chaos_events} />
+            <ChaosEvents 
+              gameId={gameId || ''} 
+              currentTurn={gameState.current_round}
+              onChaosTriggered={handleChaosEventTriggered}
+            />
           </div>
         </div>
       </div>

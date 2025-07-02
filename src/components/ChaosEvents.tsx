@@ -66,10 +66,15 @@ const ChaosEvents = ({ gameId, currentTurn, onChaosTriggered }: ChaosEventsProps
     else if (numEventsRoll < 0.83) numEvents = 3;
     else numEvents = 4;
 
+    // Filter events by trigger condition
+    const turnStartEvents = availableEvents.filter(event => 
+      event.trigger_condition === 'turn_start' || event.trigger_condition === 'any_roll'
+    );
+
     // Select random events based on rarity weights
     const selectedEvents: ChaosEvent[] = [];
-    for (let i = 0; i < numEvents && i < availableEvents.length; i++) {
-      const weightedEvents = availableEvents
+    for (let i = 0; i < numEvents && i < turnStartEvents.length; i++) {
+      const weightedEvents = turnStartEvents
         .filter(event => !selectedEvents.find(selected => selected.id === event.id))
         .flatMap(event => {
           const weight = event.rarity === 'legendary' ? 1 : event.rarity === 'rare' ? 3 : 6;
