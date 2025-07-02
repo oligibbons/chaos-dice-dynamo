@@ -134,8 +134,6 @@ const Lobby = () => {
     }
   };
 
-  // --- START OF MODIFIED CODE FOR `joinGame` ---
-  // Change `gameId: string` to `gameToJoin: GameWithPlayers`
   const joinGame = async (gameToJoin: GameWithPlayers) => {
     if (!user) {
       toast({
@@ -167,7 +165,9 @@ const Lobby = () => {
       // We already have `gameToJoin` which contains `current_players`, `max_players`, and `status`.
       // No need for an extra `supabase.from('games').select(...)` query here.
 
-      if (gameToJoin.status !== 'waiting') { // Use gameToJoin.status
+      // --- START OF FIX: Safely access gameToJoin.status ---
+      if ((gameToJoin.status || '') !== 'waiting') { // Add (gameToJoin.status || '')
+      // --- END OF FIX ---
         toast({
           title: "Game Unavailable",
           description: "This game is no longer accepting players",
@@ -224,12 +224,12 @@ const Lobby = () => {
       setJoinLoading(null);
     }
   };
-  // --- END OF MODIFIED CODE FOR `joinGame` ---
 
-
+  // --- START OF FIX: Safely access game.name ---
   const filteredGames = games.filter(game =>
-    game.name.toLowerCase().includes(searchQuery.toLowerCase())
+    (game.name || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
+  // --- END OF FIX ---
 
   if (loading && games.length === 0) {
     return (
@@ -403,7 +403,7 @@ const Lobby = () => {
                       <div className="flex items-center justify-between">
                         <span className="flex items-center gap-1">
                           <Users className="h-4 w-4" />
-                          {game.players.length}/{game.max_players} players {/* Display players.length */}
+                          {game.players.length}/{game.max_players} players
                         </span>
                         <span className="flex items-center gap-1 text-xs">
                           <Clock className="h-3 w-3" />
@@ -432,13 +432,13 @@ const Lobby = () => {
                             ))}
                           </div>
                         ) : (
-                          <p className="text-blue-300 text-sm font-quicksand">No players yet. Be the first to join!</p> {/* Updated message */}
+                          <p className="text-blue-300 text-sm font-quicksand">No players yet. Be the first to join!</p>
                         )}
                       </div>
 
                       <Button
-                        onClick={() => joinGame(game)} {/* Pass the full 'game' object */}
-                        disabled={game.players.length >= game.max_players || joinLoading === game.id} {/* Use game.players.length */}
+                        onClick={() => joinGame(game)}
+                        disabled={game.players.length >= game.max_players || joinLoading === game.id}
                         className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 font-quicksand font-semibold"
                       >
                         {joinLoading === game.id ? 'Joining...' : 
