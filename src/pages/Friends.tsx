@@ -51,9 +51,7 @@ const Friends = () => {
           id,
           requester_id,
           addressee_id,
-          status,
-          profiles!friends_requester_id_fkey(id, username),
-          profiles_addressee:profiles!friends_addressee_id_fkey(id, username)
+          status
         `)
         .eq('status', 'accepted')
         .or(`requester_id.eq.${user!.id},addressee_id.eq.${user!.id}`);
@@ -65,17 +63,30 @@ const Friends = () => {
 
       console.log('Friends data:', data);
 
-      const friendsList = data?.map(friendship => {
-        const isRequester = friendship.requester_id === user!.id;
-        const friendProfile = isRequester ? friendship.profiles_addressee : friendship.profiles;
+      // Now fetch profile data for each friend
+      const friendsList: Friend[] = [];
+      
+      for (const friendship of data || []) {
+        const friendId = friendship.requester_id === user!.id ? friendship.addressee_id : friendship.requester_id;
         
-        return {
-          id: friendProfile?.id || '',
-          username: friendProfile?.username || 'Unknown User',
-          status: 'offline' as const, // We'll implement presence later
+        const { data: profileData, error: profileError } = await supabase
+          .from('profiles')
+          .select('id, username')
+          .eq('id', friendId)
+          .single();
+
+        if (profileError) {
+          console.error('Profile fetch error:', profileError);
+          continue;
+        }
+
+        friendsList.push({
+          id: profileData.id,
+          username: profileData.username || 'Unknown User',
+          status: 'offline' as const,
           friendshipId: friendship.id
-        };
-      }) || [];
+        });
+      }
 
       setFriends(friendsList);
     } catch (error: any) {
@@ -96,15 +107,32 @@ const Friends = () => {
           id,
           requester_id,
           status,
-          created_at,
-          profiles!friends_requester_id_fkey(id, username)
+          created_at
         `)
         .eq('addressee_id', user!.id)
         .eq('status', 'pending');
 
       if (error) throw error;
 
-      setFriendRequests(data || []);
+      // Fetch requester profiles
+      const requestsWithProfiles = [];
+      
+      for (const request of data || []) {
+        const { data: profileData, error: profileError } = await supabase
+          .from('profiles')
+          .select('id, username')
+          .eq('id', request.requester_id)
+          .single();
+
+        if (!profileError && profileData) {
+          requestsWithProfiles.push({
+            ...request,
+            profiles: profileData
+          });
+        }
+      }
+
+      setFriendRequests(requestsWithProfiles);
     } catch (error: any) {
       console.error('Error fetching friend requests:', error);
     }

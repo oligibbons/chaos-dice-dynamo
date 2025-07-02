@@ -83,10 +83,7 @@ const Lobby = () => {
               .select(`
                 id,
                 is_ready,
-                profiles!inner(
-                  id,
-                  username
-                )
+                player_id
               `)
               .eq('game_id', game.id);
 
@@ -98,11 +95,24 @@ const Lobby = () => {
               };
             }
 
-            const players = playersData?.map(player => ({
-              id: player.profiles.id,
-              username: player.profiles.username || 'Unknown Player',
-              is_ready: player.is_ready || false
-            })) || [];
+            // Now fetch profile data for each player
+            const players = [];
+            
+            for (const player of playersData || []) {
+              const { data: profileData, error: profileError } = await supabase
+                .from('profiles')
+                .select('id, username')
+                .eq('id', player.player_id)
+                .single();
+
+              if (!profileError && profileData) {
+                players.push({
+                  id: profileData.id,
+                  username: profileData.username || 'Unknown Player',
+                  is_ready: player.is_ready || false
+                });
+              }
+            }
 
             return {
               ...game,
