@@ -49,7 +49,7 @@ interface Player {
   username: string;
   score: number;
   turn_order: number;
-  scorecard: any;
+  scorecard: Record<string, number>;
 }
 
 const Game = () => {
@@ -194,9 +194,9 @@ const Game = () => {
         const playersData = gamePlayers.map(gp => ({
           id: gp.player_id,
           username: (gp.profiles as any)?.username || 'Unknown',
-          score: gp.score || 0,
+          score: typeof gp.score === 'number' ? gp.score : 0,
           turn_order: gp.turn_order,
-          scorecard: gp.scorecard || {}
+          scorecard: (gp.scorecard && typeof gp.scorecard === 'object') ? gp.scorecard as Record<string, number> : {}
         }));
         
         setPlayers(playersData);
@@ -280,7 +280,9 @@ const Game = () => {
       if (!currentPlayer) return;
 
       const newScorecard = { ...currentPlayer.scorecard, [category]: score };
-      const newTotalScore = Object.values(newScorecard).reduce((sum: number, s: any) => sum + s, 0);
+      const newTotalScore = Object.values(newScorecard).reduce((sum: number, s: unknown) => {
+        return sum + (typeof s === 'number' ? s : 0);
+      }, 0);
 
       await supabase
         .from('game_players')
