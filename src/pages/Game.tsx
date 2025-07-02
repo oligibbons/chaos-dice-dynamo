@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -6,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Dice1, Dice2, Dice3, Dice4, Dice5, Dice6, Users, Clock, Trophy, LogOut, Crown, Zap, Gamepad2, Sparkles, Star } from "lucide-react";
+import { Users, Clock, Trophy, LogOut, Crown, Zap, Gamepad2, Sparkles, Star } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -14,7 +13,6 @@ import { useSoundManager } from "@/components/SoundManager";
 import { useChaosEventHandler } from "@/hooks/useChaosEventHandler";
 import ChaoticBackground from "@/components/ChaoticBackground";
 import GameTimer from "@/components/GameTimer";
-import ChaosEventDisplay from "@/components/ChaosEventDisplay";
 import GameNotification from "@/components/GameNotification";
 import PlayerEmotes from "@/components/PlayerEmotes";
 import Dice3D from "@/components/Dice3D";
@@ -88,7 +86,7 @@ const Game = () => {
       fetchGameData();
       fetchPlayers();
       
-      // Subscribe to real-time updates
+      // Subscribe to real-time updates with better error handling
       const gameChannel = supabase
         .channel(`game-${gameId}`)
         .on('postgres_changes', {
@@ -97,6 +95,7 @@ const Game = () => {
           table: 'games',
           filter: `id=eq.${gameId}`
         }, (payload) => {
+          console.log('Game state updated:', payload);
           const newGameState = payload.new as GameState;
           // Properly type the chaos_events field
           if (newGameState.chaos_events && Array.isArray(newGameState.chaos_events)) {
@@ -119,12 +118,31 @@ const Game = () => {
           schema: 'public',
           table: 'game_players',
           filter: `game_id=eq.${gameId}`
-        }, () => {
+        }, (payload) => {
+          console.log('Game players updated:', payload);
           fetchPlayers();
         })
-        .subscribe();
+        .on('postgres_changes', {
+          event: '*',
+          schema: 'public',
+          table: 'profiles'
+        }, (payload) => {
+          console.log('Profiles updated:', payload);
+          fetchPlayers();
+        })
+        .subscribe((status) => {
+          console.log(`Realtime subscription status (game-${gameId}):`, status);
+          if (status === 'CHANNEL_ERROR') {
+            console.error('Realtime subscription failed, retrying...');
+            setTimeout(() => {
+              fetchGameData();
+              fetchPlayers();
+            }, 2000);
+          }
+        });
 
       return () => {
+        console.log(`Cleaning up realtime subscription: game-${gameId}`);
         supabase.removeChannel(gameChannel);
       };
     }
@@ -134,6 +152,8 @@ const Game = () => {
     if (!gameId) return;
     
     try {
+      console.log('Fetching game data for:', gameId);
+      
       const { data: game, error } = await supabase
         .from('games')
         .select('*')
@@ -160,6 +180,7 @@ const Game = () => {
           chaos_events: chaosEvents
         };
         
+        console.log('Game data fetched:', gameState);
         setGameState(gameState);
         checkIfMyTurn(gameState);
       }
@@ -179,11 +200,13 @@ const Game = () => {
     if (!gameId) return;
     
     try {
+      console.log('Fetching players for game:', gameId);
+      
       const { data: gamePlayers, error } = await supabase
         .from('game_players')
         .select(`
           *,
-          profiles:player_id (username)
+          profiles:player_id (id, username)
         `)
         .eq('game_id', gameId)
         .order('turn_order');
@@ -191,20 +214,34 @@ const Game = () => {
       if (error) throw error;
       
       if (gamePlayers) {
-        const playersData = gamePlayers.map(gp => ({
-          id: gp.player_id,
-          username: (gp.profiles as any)?.username || 'Unknown',
-          score: typeof gp.score === 'number' ? gp.score : 0,
-          turn_order: gp.turn_order,
-          scorecard: (gp.scorecard && typeof gp.scorecard === 'object') ? gp.scorecard as Record<string, number> : {}
-        }));
+        const playersData = gamePlayers.map(gp => {
+          const profile = gp.profiles as any;
+          const username = profile?.username || 'Unknown Player';
+          
+          console.log('Processing player:', { 
+            id: gp.player_id, 
+            username, 
+            turn_order: gp.turn_order,
+            profile 
+          });
+          
+          return {
+            id: gp.player_id,
+            username,
+            score: typeof gp.score === 'number' ? gp.score : 0,
+            turn_order: gp.turn_order,
+            scorecard: (gp.scorecard && typeof gp.scorecard === 'object') ? gp.scorecard as Record<string, number> : {}
+          };
+        });
         
+        console.log('Players data processed:', playersData);
         setPlayers(playersData);
         
         // Set current player username and update turn state
         if (gameState && playersData.length > 0) {
           const currentPlayer = playersData.find(p => p.turn_order === gameState.current_player_turn);
           if (currentPlayer) {
+            console.log('Current player:', currentPlayer);
             setCurrentPlayerUsername(currentPlayer.username);
             setIsMyTurn(currentPlayer.id === user?.id);
             
@@ -212,6 +249,8 @@ const Game = () => {
             if (currentPlayer.id === user?.id) {
               setUsedCategories(Object.keys(currentPlayer.scorecard));
             }
+          } else {
+            console.warn('No current player found for turn:', gameState.current_player_turn);
           }
         }
       }
@@ -225,6 +264,7 @@ const Game = () => {
     
     const currentPlayer = players.find(p => p.turn_order === game.current_player_turn);
     if (currentPlayer) {
+      console.log('Checking turn for:', { currentPlayer, isMyTurn: currentPlayer.id === user.id });
       setIsMyTurn(currentPlayer.id === user.id);
       setCurrentPlayerUsername(currentPlayer.username);
       
@@ -238,6 +278,7 @@ const Game = () => {
   const rollDice = () => {
     if (!isMyTurn) return;
     
+    console.log('Rolling dice, reroll count:', rerollCount);
     setIsRolling(true);
     
     // Use chaos-modified dice rolling
@@ -251,6 +292,7 @@ const Game = () => {
     // Simulate rolling animation
     setTimeout(() => {
       const modifiedDice = chaosHandler.modifyDiceRoll(finalDice);
+      console.log('Dice rolled:', modifiedDice);
       setDice(modifiedDice);
       setRerollCount(prev => prev + 1);
       setIsRolling(false);
@@ -269,12 +311,15 @@ const Game = () => {
     const newSelected = [...selectedDice];
     newSelected[index] = !newSelected[index];
     setSelectedDice(newSelected);
+    console.log('Dice selection updated:', newSelected);
   };
 
   const handleScoreSelect = async (category: string, score: number) => {
     if (!isMyTurn || !gameId || !user) return;
 
     try {
+      console.log('Recording score:', { category, score, user: user.id });
+      
       // Update player scorecard and score
       const currentPlayer = players.find(p => p.id === user.id);
       if (!currentPlayer) return;
@@ -284,7 +329,7 @@ const Game = () => {
         return sum + (typeof s === 'number' ? s : 0);
       }, 0);
 
-      await supabase
+      const { error } = await supabase
         .from('game_players')
         .update({ 
           scorecard: newScorecard,
@@ -292,6 +337,8 @@ const Game = () => {
         })
         .eq('game_id', gameId)
         .eq('player_id', user.id);
+
+      if (error) throw error;
 
       // Advance to next turn
       await advanceTurn();
@@ -320,6 +367,8 @@ const Game = () => {
     if (!gameId || !gameState) return;
 
     try {
+      console.log('Advancing turn from:', gameState.current_player_turn, 'with', players.length, 'players');
+      
       const nextPlayerTurn = (gameState.current_player_turn + 1) % players.length;
       let nextRound = gameState.current_round;
 
@@ -328,7 +377,9 @@ const Game = () => {
         nextRound += 1;
       }
 
-      await supabase
+      console.log('Next turn:', nextPlayerTurn, 'Next round:', nextRound);
+
+      const { error } = await supabase
         .from('games')
         .update({
           current_player_turn: nextPlayerTurn,
@@ -336,6 +387,8 @@ const Game = () => {
           turn_start_time: new Date().toISOString()
         })
         .eq('id', gameId);
+
+      if (error) throw error;
 
     } catch (error) {
       console.error('Error advancing turn:', error);
@@ -532,7 +585,7 @@ const Game = () => {
                       {isMyTurn ? (
                         <span className="text-yellow-300 drop-shadow-lg">🎲 Your Turn! 🎲</span>
                       ) : (
-                        <span>{currentPlayerUsername}'s Turn</span>
+                        <span>{currentPlayerUsername || 'Unknown Player'}'s Turn</span>
                       )}
                     </motion.h3>
                     <p className="text-yellow-200 font-quicksand text-sm sm:text-base">
@@ -566,8 +619,8 @@ const Game = () => {
               </CardContent>
             </Card>
 
-            {/* Dice Display - The Star of the Show */}
-            <Card className="bg-gradient-to-br from-black/70 to-purple-900/30 border-2 border-pink-400/60 backdrop-blur-md shadow-2xl">
+            {/* Dice Display - Improved chaotic theme */}
+            <Card className="bg-gradient-to-br from-black/70 to-indigo-900/30 border-2 border-pink-400/60 backdrop-blur-md shadow-2xl">
               <CardContent className="p-6">
                 <motion.h3 
                   className="text-2xl sm:text-3xl font-bangers text-white mb-6 text-center"
@@ -707,10 +760,10 @@ const Game = () => {
                         } : {}}
                         transition={{ duration: 1.5, repeat: Infinity }}
                       >
-                        {player.username[0]?.toUpperCase()}
+                        {player.username?.[0]?.toUpperCase() || '?'}
                       </motion.div>
                       <span className="text-white font-quicksand font-medium text-sm">
-                        {player.username}
+                        {player.username || 'Unknown Player'}
                         {player.id === user?.id && ' (You)'}
                       </span>
                     </div>
@@ -723,15 +776,13 @@ const Game = () => {
               </CardContent>
             </Card>
 
-            {/* Scorecard - Only show when it's the player's turn */}
-            {isMyTurn && rerollCount > 0 && (
-              <Scorecard
-                dice={dice}
-                onScoreSelect={handleScoreSelect}
-                usedCategories={usedCategories}
-                isMyTurn={isMyTurn}
-              />
-            )}
+            {/* Scorecard - Always visible with better styling */}
+            <Scorecard
+              dice={dice}
+              onScoreSelect={handleScoreSelect}
+              usedCategories={usedCategories}
+              isMyTurn={isMyTurn}
+            />
 
             {/* Chaos Events */}
             <ChaosEvents 

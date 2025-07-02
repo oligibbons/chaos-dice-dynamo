@@ -95,7 +95,7 @@ export const useGameData = (gameId?: string) => {
         return [];
       }
 
-      // Fetch profile data for each player
+      // Fetch profile data for each player with better error handling
       const players: Player[] = [];
       
       for (const gamePlayer of gamePlayers) {
@@ -108,6 +108,14 @@ export const useGameData = (gameId?: string) => {
 
           if (profileError) {
             console.error(`Profile error for player ${gamePlayer.player_id}:`, profileError);
+            // Still add the player with unknown username rather than skipping
+            players.push({
+              id: gamePlayer.player_id,
+              username: 'Unknown Player',
+              is_ready: gamePlayer.is_ready || false,
+              is_host: gamePlayer.player_id === hostId,
+              joined_at: gamePlayer.joined_at || new Date().toISOString()
+            });
             continue;
           }
 
@@ -122,10 +130,18 @@ export const useGameData = (gameId?: string) => {
           }
         } catch (error) {
           console.error(`Error fetching profile for player ${gamePlayer.player_id}:`, error);
+          // Add player with unknown username to maintain consistency
+          players.push({
+            id: gamePlayer.player_id,
+            username: 'Unknown Player',
+            is_ready: gamePlayer.is_ready || false,
+            is_host: gamePlayer.player_id === hostId,
+            joined_at: gamePlayer.joined_at || new Date().toISOString()
+          });
         }
       }
 
-      console.log(`Fetched ${players.length} players for game ${gameId}`);
+      console.log(`Fetched ${players.length} players for game ${gameId}:`, players);
       return players;
     } catch (error: any) {
       console.error(`Error fetching players for game ${gameId}:`, error);
@@ -137,6 +153,8 @@ export const useGameData = (gameId?: string) => {
     try {
       setLoading(true);
       setError(null);
+      
+      console.log('Fetching single game:', gameId);
       
       const { data: game, error: gameError } = await supabase
         .from('games')
@@ -153,6 +171,7 @@ export const useGameData = (gameId?: string) => {
         players
       };
 
+      console.log('Single game fetched:', gameWithPlayers);
       setCurrentGame(gameWithPlayers);
       return gameWithPlayers;
     } catch (error: any) {
@@ -170,18 +189,19 @@ export const useGameData = (gameId?: string) => {
   }, [fetchGamePlayers, toast]);
 
   const setupRealtimeSubscription = useCallback((onGameUpdate?: () => void) => {
-    const channelName = gameId ? `game-${gameId}` : 'lobby-games';
+    const channelName = gameId ? `game-data-${gameId}` : 'lobby-games-data';
     
-    console.log(`Setting up realtime subscription: ${channelName}`);
+    console.log(`Setting up enhanced realtime subscription: ${channelName}`);
     
     const channel = supabase
       .channel(channelName)
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
-        table: 'games'
+        table: 'games',
+        ...(gameId && { filter: `id=eq.${gameId}` })
       }, (payload) => {
-        console.log('Games table change:', payload);
+        console.log('Games table change detected:', payload);
         if (gameId) {
           fetchSingleGame(gameId);
         } else {
@@ -192,9 +212,10 @@ export const useGameData = (gameId?: string) => {
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
-        table: 'game_players'
+        table: 'game_players',
+        ...(gameId && { filter: `game_id=eq.${gameId}` })
       }, (payload) => {
-        console.log('Game players change:', payload);
+        console.log('Game players change detected:', payload);
         if (gameId) {
           fetchSingleGame(gameId);
         } else {
@@ -203,11 +224,12 @@ export const useGameData = (gameId?: string) => {
         onGameUpdate?.();
       })
       .on('postgres_changes', {
-        event: '*',
+        event: 'UPDATE',
         schema: 'public',
         table: 'profiles'
       }, (payload) => {
-        console.log('Profiles change:', payload);
+        console.log('Profiles change detected:', payload);
+        // Only refetch if this profile is involved in current games
         if (gameId) {
           fetchSingleGame(gameId);
         } else {
@@ -216,9 +238,11 @@ export const useGameData = (gameId?: string) => {
         onGameUpdate?.();
       })
       .subscribe((status) => {
-        console.log(`Realtime subscription status (${channelName}):`, status);
-        if (status === 'CHANNEL_ERROR') {
-          console.error('Realtime subscription failed, retrying...');
+        console.log(`Enhanced realtime subscription status (${channelName}):`, status);
+        if (status === 'SUBSCRIBED') {
+          console.log('Successfully subscribed to realtime updates');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('Realtime subscription failed, attempting recovery...');
           setTimeout(() => {
             if (gameId) {
               fetchSingleGame(gameId);
@@ -230,7 +254,7 @@ export const useGameData = (gameId?: string) => {
       });
 
     return () => {
-      console.log(`Cleaning up realtime subscription: ${channelName}`);
+      console.log(`Cleaning up enhanced realtime subscription: ${channelName}`);
       supabase.removeChannel(channel);
     };
   }, [gameId, fetchGames, fetchSingleGame]);

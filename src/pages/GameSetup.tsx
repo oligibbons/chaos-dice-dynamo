@@ -14,33 +14,38 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useGameData } from "@/hooks/useGameData";
 import ChaoticBackground from "@/components/ChaoticBackground";
+import RoomInvite from "@/components/RoomInvite";
 
 const GameSetup = () => {
   const { gameId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
   const { toast } = useToast();
-  const { currentGame, loading, setupRealtimeSubscription } = useGameData(gameId);
+  const { currentGame, loading, setupRealtimeSubscription, refetch } = useGameData(gameId);
   
   const [maxPlayers, setMaxPlayers] = useState(4);
   const [maxRounds, setMaxRounds] = useState(7);
   const [isPrivate, setIsPrivate] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
 
-  // Set up realtime subscription for game updates
+  // Set up realtime subscription for game updates with better error handling
   useEffect(() => {
     if (!gameId) return;
     
+    console.log('Setting up realtime subscription for game:', gameId);
+    
     const cleanup = setupRealtimeSubscription(() => {
-      // Refetch will happen automatically via the hook
+      console.log('Game updated, refetching data...');
+      refetch();
     });
     
     return cleanup;
-  }, [gameId, setupRealtimeSubscription]);
+  }, [gameId, setupRealtimeSubscription, refetch]);
 
   // Auto-navigate all players when game starts
   useEffect(() => {
     if (currentGame?.status === 'active') {
+      console.log('Game is now active, navigating to game...');
       navigate(`/game/${gameId}`);
     }
   }, [currentGame?.status, gameId, navigate]);
@@ -55,12 +60,16 @@ const GameSetup = () => {
   }, [currentGame]);
 
   const isHost = currentGame?.host_id === user?.id;
-  const canStart = currentGame?.players.length >= 2 && currentGame?.players.every(p => p.is_ready);
+  // Host can start if there are at least 2 players and all NON-HOST players are ready
+  const nonHostPlayers = currentGame?.players.filter(p => !p.is_host) || [];
+  const canStart = currentGame?.players.length >= 2 && nonHostPlayers.every(p => p.is_ready);
 
   const updateGameSettings = async () => {
     if (!gameId || !isHost) return;
 
     try {
+      console.log('Updating game settings...', { maxPlayers, maxRounds, isPrivate });
+      
       const { error } = await supabase
         .from('games')
         .update({
@@ -93,6 +102,8 @@ const GameSetup = () => {
       const currentPlayer = currentGame?.players.find(p => p.id === user.id);
       const newReadyState = !currentPlayer?.is_ready;
 
+      console.log('Toggling ready state for player:', user.id, 'to:', newReadyState);
+
       const { error } = await supabase
         .from('game_players')
         .update({ is_ready: newReadyState })
@@ -120,17 +131,26 @@ const GameSetup = () => {
 
     setIsStarting(true);
     try {
+      console.log('Starting game with players:', currentGame.players);
+      
       // Assign turn orders and start the game
       const players = currentGame.players;
       const shuffledPlayers = [...players].sort(() => Math.random() - 0.5);
 
+      console.log('Assigning turn orders:', shuffledPlayers.map((p, i) => ({ player: p.username, order: i })));
+
       // Update each player's turn order
       for (let i = 0; i < shuffledPlayers.length; i++) {
-        await supabase
+        const { error: playerError } = await supabase
           .from('game_players')
           .update({ turn_order: i })
           .eq('game_id', gameId)
           .eq('player_id', shuffledPlayers[i].id);
+
+        if (playerError) {
+          console.error('Error updating player turn order:', playerError);
+          throw playerError;
+        }
       }
 
       // Start the game
@@ -147,6 +167,8 @@ const GameSetup = () => {
 
       if (error) throw error;
 
+      console.log('Game started successfully!');
+      
       toast({
         title: "Game Started!",
         description: "Let the chaos begin!",
@@ -273,6 +295,13 @@ const GameSetup = () => {
                     Private Game
                   </Label>
                 </div>
+
+                {/* Room Invite Component */}
+                <RoomInvite 
+                  gameId={gameId || ''} 
+                  roomCode={currentGame.game_code} 
+                  isHost={isHost} 
+                />
               </CardContent>
             </Card>
           )}
@@ -298,11 +327,11 @@ const GameSetup = () => {
                   >
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-full bg-gradient-to-r from-green-500 to-emerald-500 flex items-center justify-center font-bangers text-sm text-black">
-                        {player.username[0]?.toUpperCase()}
+                        {player.username?.[0]?.toUpperCase() || '?'}
                       </div>
                       <div>
                         <div className="text-white font-quicksand font-medium flex items-center gap-2">
-                          {player.username}
+                          {player.username || 'Unknown Player'}
                           {player.is_host && (
                             <Crown className="h-4 w-4 text-yellow-400" />
                           )}
@@ -311,12 +340,14 @@ const GameSetup = () => {
                     </div>
                     <Badge 
                       className={`${
-                        player.is_ready 
-                          ? 'bg-green-600 text-white' 
-                          : 'bg-gray-600 text-gray-300'
+                        player.is_host 
+                          ? 'bg-yellow-600 text-white' 
+                          : player.is_ready 
+                            ? 'bg-green-600 text-white' 
+                            : 'bg-gray-600 text-gray-300'
                       } border-0`}
                     >
-                      {player.is_ready ? 'Ready' : 'Not Ready'}
+                      {player.is_host ? 'Host' : player.is_ready ? 'Ready' : 'Not Ready'}
                     </Badge>
                   </motion.div>
                 ))}
@@ -357,7 +388,9 @@ const GameSetup = () => {
             <p className="text-yellow-300 font-quicksand">
               {currentGame.players.length < 2 
                 ? 'Need at least 2 players to start' 
-                : 'All players must be ready to start'
+                : nonHostPlayers.length > 0 && !nonHostPlayers.every(p => p.is_ready)
+                  ? 'All non-host players must be ready to start'
+                  : 'Ready to start!'
               }
             </p>
           </div>
