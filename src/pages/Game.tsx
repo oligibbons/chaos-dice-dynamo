@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -18,6 +19,7 @@ import GameNotification from "@/components/GameNotification";
 import PlayerEmotes from "@/components/PlayerEmotes";
 import Dice3D from "@/components/Dice3D";
 import ChaosEvents from "@/components/ChaosEvents";
+import Scorecard from "@/components/Scorecard";
 
 interface ChaosEvent {
   id: string;
@@ -76,6 +78,7 @@ const Game = () => {
   const [isRolling, setIsRolling] = useState(false);
   const [wildNumberSelection, setWildNumberSelection] = useState<number | null>(null);
   const [showWildNumberDialog, setShowWildNumberDialog] = useState(false);
+  const [usedCategories, setUsedCategories] = useState<string[]>([]);
 
   // Initialize chaos event handler
   const chaosHandler = useChaosEventHandler(gameId || '', user?.id || '');
@@ -110,6 +113,14 @@ const Game = () => {
           }
           setGameState(newGameState);
           checkIfMyTurn(newGameState);
+        })
+        .on('postgres_changes', {
+          event: '*',
+          schema: 'public',
+          table: 'game_players',
+          filter: `game_id=eq.${gameId}`
+        }, () => {
+          fetchPlayers();
         })
         .subscribe();
 
@@ -190,9 +201,18 @@ const Game = () => {
         
         setPlayers(playersData);
         
-        // Set current player username
-        if (gameState && playersData[gameState.current_player_turn]) {
-          setCurrentPlayerUsername(playersData[gameState.current_player_turn].username);
+        // Set current player username and update turn state
+        if (gameState && playersData.length > 0) {
+          const currentPlayer = playersData.find(p => p.turn_order === gameState.current_player_turn);
+          if (currentPlayer) {
+            setCurrentPlayerUsername(currentPlayer.username);
+            setIsMyTurn(currentPlayer.id === user?.id);
+            
+            // Load used categories for current player
+            if (currentPlayer.id === user?.id) {
+              setUsedCategories(Object.keys(currentPlayer.scorecard));
+            }
+          }
         }
       }
     } catch (error) {
@@ -203,11 +223,15 @@ const Game = () => {
   const checkIfMyTurn = (game: GameState) => {
     if (!user || !players.length) return;
     
-    const currentPlayer = players[game.current_player_turn];
-    setIsMyTurn(currentPlayer?.id === user.id);
-    
+    const currentPlayer = players.find(p => p.turn_order === game.current_player_turn);
     if (currentPlayer) {
+      setIsMyTurn(currentPlayer.id === user.id);
       setCurrentPlayerUsername(currentPlayer.username);
+      
+      // Load used categories for current player
+      if (currentPlayer.id === user.id) {
+        setUsedCategories(Object.keys(currentPlayer.scorecard));
+      }
     }
   };
 
@@ -245,6 +269,75 @@ const Game = () => {
     const newSelected = [...selectedDice];
     newSelected[index] = !newSelected[index];
     setSelectedDice(newSelected);
+  };
+
+  const handleScoreSelect = async (category: string, score: number) => {
+    if (!isMyTurn || !gameId || !user) return;
+
+    try {
+      // Update player scorecard and score
+      const currentPlayer = players.find(p => p.id === user.id);
+      if (!currentPlayer) return;
+
+      const newScorecard = { ...currentPlayer.scorecard, [category]: score };
+      const newTotalScore = Object.values(newScorecard).reduce((sum: number, s: any) => sum + s, 0);
+
+      await supabase
+        .from('game_players')
+        .update({ 
+          scorecard: newScorecard,
+          score: newTotalScore
+        })
+        .eq('game_id', gameId)
+        .eq('player_id', user.id);
+
+      // Advance to next turn
+      await advanceTurn();
+
+      toast({
+        title: "Score Recorded!",
+        description: `You scored ${score} points for ${category}`,
+      });
+
+      // Reset turn state
+      setRerollCount(0);
+      setSelectedDice([false, false, false, false, false]);
+      setDice([1, 2, 3, 4, 5]);
+
+    } catch (error) {
+      console.error('Error recording score:', error);
+      toast({
+        title: "Error",
+        description: "Failed to record score",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const advanceTurn = async () => {
+    if (!gameId || !gameState) return;
+
+    try {
+      const nextPlayerTurn = (gameState.current_player_turn + 1) % players.length;
+      let nextRound = gameState.current_round;
+
+      // If we've completed a full round
+      if (nextPlayerTurn === 0) {
+        nextRound += 1;
+      }
+
+      await supabase
+        .from('games')
+        .update({
+          current_player_turn: nextPlayerTurn,
+          current_round: nextRound,
+          turn_start_time: new Date().toISOString()
+        })
+        .eq('id', gameId);
+
+    } catch (error) {
+      console.error('Error advancing turn:', error);
+    }
   };
 
   const handleChaosEventTriggered = (event: ChaosEvent) => {
@@ -589,7 +682,7 @@ const Game = () => {
                     transition={{ delay: index * 0.1 }}
                     className={`
                       flex items-center justify-between p-3 rounded-lg transition-all
-                      ${gameState.current_player_turn === index 
+                      ${player.turn_order === gameState.current_player_turn 
                         ? 'bg-gradient-to-r from-yellow-600/30 to-orange-600/30 border border-yellow-500/60 shadow-lg' 
                         : 'bg-blue-600/20 border border-blue-500/40'
                       }
@@ -599,12 +692,12 @@ const Game = () => {
                       <motion.div 
                         className={`
                           w-8 h-8 rounded-full flex items-center justify-center font-bangers text-sm
-                          ${gameState.current_player_turn === index 
+                          ${player.turn_order === gameState.current_player_turn 
                             ? 'bg-gradient-to-r from-yellow-500 to-orange-500 text-black shadow-lg' 
                             : 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white'
                           }
                         `}
-                        animate={gameState.current_player_turn === index ? { 
+                        animate={player.turn_order === gameState.current_player_turn ? { 
                           boxShadow: [
                             "0 0 0 0 rgba(255, 193, 7, 0.7)",
                             "0 0 0 10px rgba(255, 193, 7, 0)",
@@ -627,6 +720,16 @@ const Game = () => {
                 ))}
               </CardContent>
             </Card>
+
+            {/* Scorecard - Only show when it's the player's turn */}
+            {isMyTurn && rerollCount > 0 && (
+              <Scorecard
+                dice={dice}
+                onScoreSelect={handleScoreSelect}
+                usedCategories={usedCategories}
+                isMyTurn={isMyTurn}
+              />
+            )}
 
             {/* Chaos Events */}
             <ChaosEvents 
