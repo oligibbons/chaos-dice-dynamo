@@ -95,12 +95,12 @@ const Scorecard = ({ dice, onScoreSelect, usedCategories, isMyTurn }: ScorecardP
 
   const categories = [
     // Upper Section (Number categories)
-    { id: 'ones', name: 'Ones', description: 'Sum of all 1s', icon: Star, section: 'upper' },
-    { id: 'twos', name: 'Twos', description: 'Sum of all 2s', icon: Star, section: 'upper' },
-    { id: 'threes', name: 'Threes', description: 'Sum of all 3s', icon: Star, section: 'upper' },
-    { id: 'fours', name: 'Fours', description: 'Sum of all 4s', icon: Star, section: 'upper' },
-    { id: 'fives', name: 'Fives', description: 'Sum of all 5s', icon: Star, section: 'upper' },
-    { id: 'sixes', name: 'Sixes', description: 'Sum of all 6s', icon: Star, section: 'upper' },
+    { id: 'ones', name: 'Ones', description: 'Count & add only 1s', icon: Star, section: 'upper' },
+    { id: 'twos', name: 'Twos', description: 'Count & add only 2s', icon: Star, section: 'upper' },
+    { id: 'threes', name: 'Threes', description: 'Count & add only 3s', icon: Star, section: 'upper' },
+    { id: 'fours', name: 'Fours', description: 'Count & add only 4s', icon: Star, section: 'upper' },
+    { id: 'fives', name: 'Fives', description: 'Count & add only 5s', icon: Star, section: 'upper' },
+    { id: 'sixes', name: 'Sixes', description: 'Count & add only 6s', icon: Star, section: 'upper' },
     
     // Lower Section (Special combinations)
     { id: 'three_of_kind', name: 'Three of a Kind', description: '3+ same = sum of all dice', icon: Target, section: 'lower' },

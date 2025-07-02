@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -86,7 +87,7 @@ const Game = () => {
       fetchGameData();
       fetchPlayers();
       
-      // Subscribe to real-time updates with better error handling
+      // Subscribe to real-time updates
       const gameChannel = supabase
         .channel(`game-${gameId}`)
         .on('postgres_changes', {
@@ -97,7 +98,8 @@ const Game = () => {
         }, (payload) => {
           console.log('Game state updated:', payload);
           const newGameState = payload.new as GameState;
-          // Properly type the chaos_events field
+          
+          // Handle chaos events properly
           if (newGameState.chaos_events && Array.isArray(newGameState.chaos_events)) {
             newGameState.chaos_events = newGameState.chaos_events.map((event: any) => ({
               id: event.id || '',
@@ -111,7 +113,6 @@ const Game = () => {
             newGameState.chaos_events = [];
           }
           setGameState(newGameState);
-          checkIfMyTurn(newGameState);
         })
         .on('postgres_changes', {
           event: '*',
@@ -122,23 +123,8 @@ const Game = () => {
           console.log('Game players updated:', payload);
           fetchPlayers();
         })
-        .on('postgres_changes', {
-          event: '*',
-          schema: 'public',
-          table: 'profiles'
-        }, (payload) => {
-          console.log('Profiles updated:', payload);
-          fetchPlayers();
-        })
         .subscribe((status) => {
           console.log(`Realtime subscription status (game-${gameId}):`, status);
-          if (status === 'CHANNEL_ERROR') {
-            console.error('Realtime subscription failed, retrying...');
-            setTimeout(() => {
-              fetchGameData();
-              fetchPlayers();
-            }, 2000);
-          }
         });
 
       return () => {
@@ -163,7 +149,6 @@ const Game = () => {
       if (error) throw error;
       
       if (game) {
-        // Properly handle chaos_events JSON field
         const chaosEvents: ChaosEvent[] = Array.isArray(game.chaos_events) 
           ? game.chaos_events.map((event: any) => ({
               id: event.id || '',
@@ -182,7 +167,6 @@ const Game = () => {
         
         console.log('Game data fetched:', gameState);
         setGameState(gameState);
-        checkIfMyTurn(gameState);
       }
     } catch (error) {
       console.error('Error fetching game:', error);
@@ -202,32 +186,30 @@ const Game = () => {
     try {
       console.log('Fetching players for game:', gameId);
       
+      // Use proper join syntax
       const { data: gamePlayers, error } = await supabase
         .from('game_players')
         .select(`
-          *,
-          profiles:player_id (id, username)
+          player_id,
+          score,
+          turn_order,
+          scorecard,
+          profiles!inner (
+            id,
+            username
+          )
         `)
         .eq('game_id', gameId)
-        .order('turn_order');
+        .order('turn_order', { ascending: true });
 
       if (error) throw error;
       
       if (gamePlayers) {
-        const playersData = gamePlayers.map(gp => {
-          const profile = gp.profiles as any;
-          const username = profile?.username || 'Unknown Player';
-          
-          console.log('Processing player:', { 
-            id: gp.player_id, 
-            username, 
-            turn_order: gp.turn_order,
-            profile 
-          });
-          
+        const playersData = gamePlayers.map((gp: any) => {
+          const profile = gp.profiles;
           return {
             id: gp.player_id,
-            username,
+            username: profile?.username || 'Unknown Player',
             score: typeof gp.score === 'number' ? gp.score : 0,
             turn_order: gp.turn_order,
             scorecard: (gp.scorecard && typeof gp.scorecard === 'object') ? gp.scorecard as Record<string, number> : {}
@@ -237,20 +219,19 @@ const Game = () => {
         console.log('Players data processed:', playersData);
         setPlayers(playersData);
         
-        // Set current player username and update turn state
+        // Update turn state and current player
         if (gameState && playersData.length > 0) {
           const currentPlayer = playersData.find(p => p.turn_order === gameState.current_player_turn);
           if (currentPlayer) {
             console.log('Current player:', currentPlayer);
             setCurrentPlayerUsername(currentPlayer.username);
-            setIsMyTurn(currentPlayer.id === user?.id);
+            const isMyTurnNow = currentPlayer.id === user?.id;
+            setIsMyTurn(isMyTurnNow);
             
             // Load used categories for current player
-            if (currentPlayer.id === user?.id) {
+            if (isMyTurnNow) {
               setUsedCategories(Object.keys(currentPlayer.scorecard));
             }
-          } else {
-            console.warn('No current player found for turn:', gameState.current_player_turn);
           }
         }
       }
@@ -259,21 +240,23 @@ const Game = () => {
     }
   };
 
-  const checkIfMyTurn = (game: GameState) => {
-    if (!user || !players.length) return;
-    
-    const currentPlayer = players.find(p => p.turn_order === game.current_player_turn);
-    if (currentPlayer) {
-      console.log('Checking turn for:', { currentPlayer, isMyTurn: currentPlayer.id === user.id });
-      setIsMyTurn(currentPlayer.id === user.id);
-      setCurrentPlayerUsername(currentPlayer.username);
-      
-      // Load used categories for current player
-      if (currentPlayer.id === user.id) {
-        setUsedCategories(Object.keys(currentPlayer.scorecard));
+  // Update turn state when game state or players change
+  useEffect(() => {
+    if (gameState && players.length > 0) {
+      const currentPlayer = players.find(p => p.turn_order === gameState.current_player_turn);
+      if (currentPlayer) {
+        console.log('Current player updated:', currentPlayer);
+        setCurrentPlayerUsername(currentPlayer.username);
+        const isMyTurnNow = currentPlayer.id === user?.id;
+        setIsMyTurn(isMyTurnNow);
+        
+        // Load used categories for current player
+        if (isMyTurnNow) {
+          setUsedCategories(Object.keys(currentPlayer.scorecard));
+        }
       }
     }
-  };
+  }, [gameState, players, user?.id]);
 
   const rollDice = () => {
     if (!isMyTurn) return;
@@ -306,7 +289,7 @@ const Game = () => {
   };
 
   const toggleDiceSelection = (index: number) => {
-    if (rerollCount === 0 || isRolling) return; // Can't select dice before first roll or while rolling
+    if (rerollCount === 0 || isRolling) return;
     
     const newSelected = [...selectedDice];
     newSelected[index] = !newSelected[index];
@@ -320,7 +303,6 @@ const Game = () => {
     try {
       console.log('Recording score:', { category, score, user: user.id });
       
-      // Update player scorecard and score
       const currentPlayer = players.find(p => p.id === user.id);
       if (!currentPlayer) return;
 
@@ -372,8 +354,8 @@ const Game = () => {
       const nextPlayerTurn = (gameState.current_player_turn + 1) % players.length;
       let nextRound = gameState.current_round;
 
-      // If we've completed a full round
-      if (nextPlayerTurn === 0) {
+      // If we've completed a full round (back to player 0)
+      if (nextPlayerTurn === 0 && gameState.current_player_turn > 0) {
         nextRound += 1;
       }
 
@@ -423,14 +405,12 @@ const Game = () => {
 
   const leaveGame = async () => {
     try {
-      // Remove player from game
       await supabase
         .from('game_players')
         .delete()
         .eq('game_id', gameId)
         .eq('player_id', user?.id);
 
-      // Update game player count
       if (gameState) {
         await supabase
           .from('games')
@@ -454,19 +434,16 @@ const Game = () => {
 
   const handleTimeUp = () => {
     if (isMyTurn) {
-      // Auto-skip turn when time is up
       toast({
         title: "Time's Up!",
         description: "Your turn has been skipped",
         variant: "destructive",
       });
-      // Here you would implement the auto-skip logic
     }
   };
 
   const handleEmote = (emote: string) => {
     console.log('Emote sent:', emote);
-    // TODO: Implement emote sending to other players
   };
 
   if (isLoading) {
@@ -527,7 +504,7 @@ const Game = () => {
       )}
       
       <div className="relative z-10 p-2 sm:p-4 max-w-7xl mx-auto">
-        {/* Mobile-optimized Game Header */}
+        {/* Game Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -570,7 +547,7 @@ const Game = () => {
         </motion.div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6">
-          {/* Main Game Area - Takes most space on large screens */}
+          {/* Main Game Area */}
           <div className="lg:col-span-8 space-y-4">
             {/* Current Turn & Timer */}
             <Card className="bg-black/60 border-yellow-400/60 backdrop-blur-md shadow-2xl overflow-hidden">
@@ -585,7 +562,7 @@ const Game = () => {
                       {isMyTurn ? (
                         <span className="text-yellow-300 drop-shadow-lg">🎲 Your Turn! 🎲</span>
                       ) : (
-                        <span>{currentPlayerUsername || 'Unknown Player'}'s Turn</span>
+                        <span>{currentPlayerUsername}'s Turn</span>
                       )}
                     </motion.h3>
                     <p className="text-yellow-200 font-quicksand text-sm sm:text-base">
@@ -619,7 +596,7 @@ const Game = () => {
               </CardContent>
             </Card>
 
-            {/* Dice Display - Improved chaotic theme */}
+            {/* Dice Display */}
             <Card className="bg-gradient-to-br from-black/70 to-indigo-900/30 border-2 border-pink-400/60 backdrop-blur-md shadow-2xl">
               <CardContent className="p-6">
                 <motion.h3 
@@ -662,24 +639,9 @@ const Game = () => {
                           <Star className="h-4 w-4 text-yellow-400" />
                         </motion.div>
                       )}
-                      {chaosHandler.chaosState.activeDiceModifications.binaryDice?.index === index && (
-                        <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2">
-                          <Badge className="bg-red-600 text-white text-xs">Binary!</Badge>
-                        </div>
-                      )}
                     </motion.div>
                   ))}
                 </div>
-                
-                {/* Chaos Status Indicators */}
-                {(chaosHandler.chaosState.activeDiceModifications.minValue !== undefined || 
-                  chaosHandler.chaosState.activeDiceModifications.maxValue !== undefined) && (
-                  <div className="text-center mb-4">
-                    <Badge className="bg-gradient-to-r from-red-600 to-orange-600 text-white">
-                      Dice Range: {chaosHandler.chaosState.activeDiceModifications.minValue}-{chaosHandler.chaosState.activeDiceModifications.maxValue}
-                    </Badge>
-                  </div>
-                )}
                 
                 {isMyTurn && rerollCount < 3 && (
                   <div className="text-center">
@@ -718,7 +680,7 @@ const Game = () => {
             </Card>
           </div>
 
-          {/* Right Sidebar - Game Info */}
+          {/* Right Sidebar */}
           <div className="lg:col-span-4 space-y-4">
             {/* Players */}
             <Card className="bg-black/60 border-blue-400/60 backdrop-blur-md shadow-2xl">
@@ -763,7 +725,7 @@ const Game = () => {
                         {player.username?.[0]?.toUpperCase() || '?'}
                       </motion.div>
                       <span className="text-white font-quicksand font-medium text-sm">
-                        {player.username || 'Unknown Player'}
+                        {player.username}
                         {player.id === user?.id && ' (You)'}
                       </span>
                     </div>
@@ -776,7 +738,7 @@ const Game = () => {
               </CardContent>
             </Card>
 
-            {/* Scorecard - Always visible with better styling */}
+            {/* Scorecard */}
             <Scorecard
               dice={dice}
               onScoreSelect={handleScoreSelect}

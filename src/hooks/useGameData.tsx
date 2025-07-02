@@ -66,7 +66,7 @@ export const useGameData = (gameId?: string) => {
       );
 
       setGames(gamesWithPlayers);
-    } catch (error:any) {
+    } catch (error: any) {
       console.error('Error fetching games:', error);
       setError(error.message || 'Failed to load games');
       toast({
@@ -83,63 +83,42 @@ export const useGameData = (gameId?: string) => {
     try {
       console.log(`Fetching players for game ${gameId}...`);
       
+      // Use proper join syntax to get player profiles
       const { data: gamePlayers, error: playersError } = await supabase
         .from('game_players')
-        .select('player_id, is_ready, joined_at')
+        .select(`
+          player_id,
+          is_ready,
+          joined_at,
+          turn_order,
+          profiles!inner (
+            id,
+            username
+          )
+        `)
         .eq('game_id', gameId)
-        .order('joined_at');
+        .order('turn_order', { ascending: true });
 
-      if (playersError) throw playersError;
+      if (playersError) {
+        console.error('Players query error:', playersError);
+        throw playersError;
+      }
 
       if (!gamePlayers || gamePlayers.length === 0) {
+        console.log('No players found for game:', gameId);
         return [];
       }
 
-      // Fetch profile data for each player with better error handling
-      const players: Player[] = [];
-      
-      for (const gamePlayer of gamePlayers) {
-        try {
-          const { data: profile, error: profileError } = await supabase
-            .from('profiles')
-            .select('id, username')
-            .eq('id', gamePlayer.player_id)
-            .single();
-
-          if (profileError) {
-            console.error(`Profile error for player ${gamePlayer.player_id}:`, profileError);
-            // Still add the player with unknown username rather than skipping
-            players.push({
-              id: gamePlayer.player_id,
-              username: 'Unknown Player',
-              is_ready: gamePlayer.is_ready || false,
-              is_host: gamePlayer.player_id === hostId,
-              joined_at: gamePlayer.joined_at || new Date().toISOString()
-            });
-            continue;
-          }
-
-          if (profile) {
-            players.push({
-              id: profile.id,
-              username: profile.username || 'Unknown Player',
-              is_ready: gamePlayer.is_ready || false,
-              is_host: profile.id === hostId,
-              joined_at: gamePlayer.joined_at || new Date().toISOString()
-            });
-          }
-        } catch (error) {
-          console.error(`Error fetching profile for player ${gamePlayer.player_id}:`, error);
-          // Add player with unknown username to maintain consistency
-          players.push({
-            id: gamePlayer.player_id,
-            username: 'Unknown Player',
-            is_ready: gamePlayer.is_ready || false,
-            is_host: gamePlayer.player_id === hostId,
-            joined_at: gamePlayer.joined_at || new Date().toISOString()
-          });
-        }
-      }
+      const players: Player[] = gamePlayers.map((gp: any) => {
+        const profile = gp.profiles;
+        return {
+          id: gp.player_id,
+          username: profile?.username || 'Unknown Player',
+          is_ready: gp.is_ready || false,
+          is_host: gp.player_id === hostId,
+          joined_at: gp.joined_at || new Date().toISOString()
+        };
+      });
 
       console.log(`Fetched ${players.length} players for game ${gameId}:`, players);
       return players;
@@ -202,12 +181,14 @@ export const useGameData = (gameId?: string) => {
         ...(gameId && { filter: `id=eq.${gameId}` })
       }, (payload) => {
         console.log('Games table change detected:', payload);
-        if (gameId) {
-          fetchSingleGame(gameId);
-        } else {
-          fetchGames();
-        }
-        onGameUpdate?.();
+        setTimeout(() => {
+          if (gameId) {
+            fetchSingleGame(gameId);
+          } else {
+            fetchGames();
+          }
+          onGameUpdate?.();
+        }, 100);
       })
       .on('postgres_changes', {
         event: '*',
@@ -216,12 +197,14 @@ export const useGameData = (gameId?: string) => {
         ...(gameId && { filter: `game_id=eq.${gameId}` })
       }, (payload) => {
         console.log('Game players change detected:', payload);
-        if (gameId) {
-          fetchSingleGame(gameId);
-        } else {
-          fetchGames();
-        }
-        onGameUpdate?.();
+        setTimeout(() => {
+          if (gameId) {
+            fetchSingleGame(gameId);
+          } else {
+            fetchGames();
+          }
+          onGameUpdate?.();
+        }, 100);
       })
       .on('postgres_changes', {
         event: 'UPDATE',
@@ -229,13 +212,14 @@ export const useGameData = (gameId?: string) => {
         table: 'profiles'
       }, (payload) => {
         console.log('Profiles change detected:', payload);
-        // Only refetch if this profile is involved in current games
-        if (gameId) {
-          fetchSingleGame(gameId);
-        } else {
-          fetchGames();
-        }
-        onGameUpdate?.();
+        setTimeout(() => {
+          if (gameId) {
+            fetchSingleGame(gameId);
+          } else {
+            fetchGames();
+          }
+          onGameUpdate?.();
+        }, 100);
       })
       .subscribe((status) => {
         console.log(`Enhanced realtime subscription status (${channelName}):`, status);

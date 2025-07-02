@@ -28,7 +28,7 @@ const GameSetup = () => {
   const [isPrivate, setIsPrivate] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
 
-  // Set up realtime subscription for game updates with better error handling
+  // Set up realtime subscription for game updates
   useEffect(() => {
     if (!gameId) return;
     
@@ -46,9 +46,13 @@ const GameSetup = () => {
   useEffect(() => {
     if (currentGame?.status === 'active') {
       console.log('Game is now active, navigating to game...');
+      toast({
+        title: "Game Started!",
+        description: "Let the chaos begin!",
+      });
       navigate(`/game/${gameId}`);
     }
-  }, [currentGame?.status, gameId, navigate]);
+  }, [currentGame?.status, gameId, navigate, toast]);
 
   // Initialize form values when game data loads
   useEffect(() => {
@@ -133,9 +137,20 @@ const GameSetup = () => {
     try {
       console.log('Starting game with players:', currentGame.players);
       
-      // Assign turn orders and start the game
-      const players = currentGame.players;
-      const shuffledPlayers = [...players].sort(() => Math.random() - 0.5);
+      // Clear all player scorecards for fresh game
+      const playerIds = currentGame.players.map(p => p.id);
+      await Promise.all(
+        playerIds.map(playerId => 
+          supabase
+            .from('game_players')
+            .update({ scorecard: {} })
+            .eq('game_id', gameId)
+            .eq('player_id', playerId)
+        )
+      );
+
+      // Assign proper turn orders starting from 0
+      const shuffledPlayers = [...currentGame.players].sort(() => Math.random() - 0.5);
 
       console.log('Assigning turn orders:', shuffledPlayers.map((p, i) => ({ player: p.username, order: i })));
 
@@ -169,20 +184,14 @@ const GameSetup = () => {
 
       console.log('Game started successfully!');
       
-      toast({
-        title: "Game Started!",
-        description: "Let the chaos begin!",
-      });
-
-      // Navigation will happen automatically via useEffect
+      // Success message and navigation handled by useEffect above
     } catch (error) {
       console.error('Error starting game:', error);
       toast({
         title: "Error",
-        description: "Failed to start game",
+        description: "Failed to start game. Please try again.",
         variant: "destructive",
       });
-    } finally {
       setIsStarting(false);
     }
   };
@@ -335,6 +344,7 @@ const GameSetup = () => {
                           {player.is_host && (
                             <Crown className="h-4 w-4 text-yellow-400" />
                           )}
+                          {player.id === user?.id && ' (You)'}
                         </div>
                       </div>
                     </div>
@@ -347,7 +357,7 @@ const GameSetup = () => {
                             : 'bg-gray-600 text-gray-300'
                       } border-0`}
                     >
-                      {player.is_host ? 'Host' : player.is_ready ? 'Ready' : 'Not Ready'}
+                      {player.is_host ? 'Host (Ready)' : player.is_ready ? 'Ready' : 'Not Ready'}
                     </Badge>
                   </motion.div>
                 ))}
@@ -378,7 +388,7 @@ const GameSetup = () => {
               className="bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 font-bangers text-lg px-8 py-4 rounded-xl shadow-lg border-2 border-purple-400/50 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Play className="mr-2 h-5 w-5" />
-              {isStarting ? 'Starting...' : 'Start Game!'}
+              {isStarting ? 'Starting Game...' : 'Start Game!'}
             </Button>
           )}
         </div>
