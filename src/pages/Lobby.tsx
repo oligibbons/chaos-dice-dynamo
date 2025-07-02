@@ -13,10 +13,39 @@ import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useGameData } from "@/hooks/useGameData";
 
+// Re-defining interfaces for clarity, assuming they are consistent with useGameData.tsx
+// (You might already have these globally or in useGameData.tsx, ensure consistency)
+interface Player {
+  id: string;
+  username: string;
+  is_ready: boolean;
+  is_host: boolean;
+  joined_at: string;
+}
+
+interface Game {
+  id: string;
+  name: string;
+  host_id: string;
+  current_players: number;
+  max_players: number;
+  status: string;
+  created_at: string;
+  is_private: boolean;
+  game_code?: string;
+  max_rounds: number;
+}
+
+interface GameWithPlayers extends Game {
+  players: Player[];
+}
+
+
 const Lobby = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
+  // useGameData already fetches games with players attached
   const { games, loading, error, setupRealtimeSubscription, refetch } = useGameData();
   
   const [searchQuery, setSearchQuery] = useState('');
@@ -27,6 +56,7 @@ const Lobby = () => {
   const [joinLoading, setJoinLoading] = useState<string | null>(null);
 
   useEffect(() => {
+    // Only set up subscription if user is logged in
     if (user) {
       const cleanup = setupRealtimeSubscription();
       return cleanup;
@@ -64,7 +94,7 @@ const Lobby = () => {
           is_private: isPrivateGame,
           game_code: gameCode,
           status: 'waiting',
-          current_players: 0, // Will be updated by trigger
+          current_players: 0, // Will be updated by trigger (ensure your DB trigger updates this on player insert)
           max_players: 4
         })
         .select()
@@ -78,7 +108,7 @@ const Lobby = () => {
         .insert({
           game_id: game.id,
           player_id: user.id,
-          turn_order: 0,
+          turn_order: 0, // Host is always the first player (0-indexed)
           is_ready: false
         });
 
@@ -104,7 +134,9 @@ const Lobby = () => {
     }
   };
 
-  const joinGame = async (gameId: string) => {
+  // --- START OF MODIFIED CODE FOR `joinGame` ---
+  // Change `gameId: string` to `gameToJoin: GameWithPlayers`
+  const joinGame = async (gameToJoin: GameWithPlayers) => {
     if (!user) {
       toast({
         title: "Error",
@@ -114,37 +146,28 @@ const Lobby = () => {
       return;
     }
 
-    setJoinLoading(gameId);
+    setJoinLoading(gameToJoin.id); // Use gameToJoin.id for loading state
     try {
-      console.log('Joining game:', gameId);
+      console.log('Attempting to join game:', gameToJoin.id);
       
-      // Check if user is already in this game
-      const { data: existingPlayer } = await supabase
-        .from('game_players')
-        .select('id')
-        .eq('game_id', gameId)
-        .eq('player_id', user.id)
-        .maybeSingle();
+      // Removed the redundant Supabase query for existingPlayer
+      // Instead, use the 'players' array already available in gameToJoin
+      const isUserAlreadyInGame = gameToJoin.players.some(player => player.id === user.id);
 
-      if (existingPlayer) {
-        navigate(`/game/${gameId}/setup`);
-        return;
+      if (isUserAlreadyInGame) {
+        toast({
+            title: "Already Joined!",
+            description: `You are already in "${gameToJoin.name}".`,
+            variant: "info",
+        });
+        navigate(`/game/${gameToJoin.id}/setup`); // Navigate directly to setup if already joined
+        return; // Exit the function early
       }
 
-      // Get current game info
-      const { data: game, error: gameError } = await supabase
-        .from('games')
-        .select('current_players, max_players, status')
-        .eq('id', gameId)
-        .single();
+      // We already have `gameToJoin` which contains `current_players`, `max_players`, and `status`.
+      // No need for an extra `supabase.from('games').select(...)` query here.
 
-      if (gameError) throw gameError;
-      
-      if (!game) {
-        throw new Error('Game not found');
-      }
-
-      if (game.status !== 'waiting') {
+      if (gameToJoin.status !== 'waiting') { // Use gameToJoin.status
         toast({
           title: "Game Unavailable",
           description: "This game is no longer accepting players",
@@ -153,7 +176,7 @@ const Lobby = () => {
         return;
       }
 
-      if (game.current_players >= game.max_players) {
+      if (gameToJoin.players.length >= gameToJoin.max_players) { // Use gameToJoin.players.length for current count
         toast({
           title: "Game Full",
           description: "This game is already full",
@@ -166,9 +189,9 @@ const Lobby = () => {
       const { error: joinError } = await supabase
         .from('game_players')
         .insert({
-          game_id: gameId,
+          game_id: gameToJoin.id, // Use gameToJoin.id
           player_id: user.id,
-          turn_order: game.current_players,
+          turn_order: gameToJoin.players.length, // Assign turn_order based on current players in *this* fetched list
           is_ready: false
         });
 
@@ -176,21 +199,33 @@ const Lobby = () => {
 
       toast({
         title: "Joined Game!",
-        description: "You have successfully joined the game",
+        description: `You have successfully joined "${gameToJoin.name}"!`,
       });
 
-      navigate(`/game/${gameId}/setup`);
+      navigate(`/game/${gameToJoin.id}/setup`);
     } catch (error: any) {
       console.error('Error joining game:', error);
-      toast({
-        title: "Error",
-        description: error.message || "Failed to join game. Please try again.",
-        variant: "destructive",
-      });
+      // Specific handling for unique constraint violation, though the client-side check should prevent most
+      if (error.code === '23505') {
+        toast({
+            title: "Error",
+            description: "You've already joined this game.",
+            variant: "info",
+        });
+        navigate(`/game/${gameToJoin.id}/setup`); // Navigate even on this specific error
+      } else {
+        toast({
+          title: "Error",
+          description: error.message || "Failed to join game. Please try again.",
+          variant: "destructive",
+        });
+      }
     } finally {
       setJoinLoading(null);
     }
   };
+  // --- END OF MODIFIED CODE FOR `joinGame` ---
+
 
   const filteredGames = games.filter(game =>
     game.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -368,7 +403,7 @@ const Lobby = () => {
                       <div className="flex items-center justify-between">
                         <span className="flex items-center gap-1">
                           <Users className="h-4 w-4" />
-                          {game.current_players}/{game.max_players} players
+                          {game.players.length}/{game.max_players} players {/* Display players.length */}
                         </span>
                         <span className="flex items-center gap-1 text-xs">
                           <Clock className="h-3 w-3" />
@@ -397,17 +432,17 @@ const Lobby = () => {
                             ))}
                           </div>
                         ) : (
-                          <p className="text-blue-300 text-sm font-quicksand">Loading players...</p>
+                          <p className="text-blue-300 text-sm font-quicksand">No players yet. Be the first to join!</p> {/* Updated message */}
                         )}
                       </div>
 
                       <Button
-                        onClick={() => joinGame(game.id)}
-                        disabled={game.current_players >= game.max_players || joinLoading === game.id}
+                        onClick={() => joinGame(game)} {/* Pass the full 'game' object */}
+                        disabled={game.players.length >= game.max_players || joinLoading === game.id} {/* Use game.players.length */}
                         className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 font-quicksand font-semibold"
                       >
                         {joinLoading === game.id ? 'Joining...' : 
-                         game.current_players >= game.max_players ? 'Game Full' : 
+                         game.players.length >= game.max_players ? 'Game Full' : 
                          'Join Game'}
                       </Button>
                     </div>
