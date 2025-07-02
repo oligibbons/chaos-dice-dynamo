@@ -6,11 +6,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Users, Copy, Play, Crown, UserCheck, Clock, Settings, LogOut } from "lucide-react";
+import { Users, Copy, Play, Crown, UserCheck, Clock, Settings, LogOut, AlertTriangle, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
+import { useGameData } from "@/hooks/useGameData";
 
 interface GameRoom {
   id: string;
@@ -23,178 +24,75 @@ interface GameRoom {
   max_rounds: number;
 }
 
-interface Player {
-  id: string;
-  username: string;
-  is_ready: boolean;
-  is_host: boolean;
-  joined_at: string;
-}
-
 const GameSetup = () => {
   const { gameId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
   const { toast } = useToast();
+  const { currentGame, loading, error, setupRealtimeSubscription, refetch } = useGameData(gameId);
   
-  const [gameRoom, setGameRoom] = useState<GameRoom | null>(null);
-  const [players, setPlayers] = useState<Player[]>([]);
   const [isHost, setIsHost] = useState(false);
   const [isReady, setIsReady] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [gameCode, setGameCode] = useState('');
   const [maxRounds, setMaxRounds] = useState(7);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   useEffect(() => {
     if (gameId && user) {
-      fetchGameData();
-      
-      // Subscribe to real-time updates with better error handling
-      const gameChannel = supabase
-        .channel(`game-setup-${gameId}`)
-        .on('postgres_changes', {
-          event: '*',
-          schema: 'public',
-          table: 'games',
-          filter: `id=eq.${gameId}`
-        }, (payload) => {
-          console.log('Game updated:', payload);
-          fetchGameData();
-        })
-        .on('postgres_changes', {
-          event: '*',
-          schema: 'public',
-          table: 'game_players',
-          filter: `game_id=eq.${gameId}`
-        }, (payload) => {
-          console.log('Game players updated:', payload);
-          fetchPlayers();
-        })
-        .subscribe((status) => {
-          console.log('Game setup subscription status:', status);
-          if (status === 'SUBSCRIBED') {
-            console.log('Successfully subscribed to game setup updates');
-          } else if (status === 'CHANNEL_ERROR') {
-            console.error('Error subscribing to game setup updates');
-            // Retry after delay
-            setTimeout(() => {
-              fetchGameData();
-              fetchPlayers();
-            }, 2000);
-          }
-        });
-
-      return () => {
-        supabase.removeChannel(gameChannel);
-      };
+      const cleanup = setupRealtimeSubscription(() => {
+        console.log('Game updated via realtime');
+      });
+      return cleanup;
     }
-  }, [gameId, user]);
+  }, [gameId, user, setupRealtimeSubscription]);
+
+  useEffect(() => {
+    if (currentGame && user) {
+      setIsHost(currentGame.host_id === user.id);
+      setGameCode(currentGame.game_code || '');
+      setMaxRounds(currentGame.max_rounds || 7);
+      
+      // Set current user's ready status
+      const currentPlayer = currentGame.players.find(p => p.id === user.id);
+      if (currentPlayer) {
+        setIsReady(currentPlayer.is_ready);
+      }
+
+      // If game is active, redirect to game screen
+      if (currentGame.status === 'active') {
+        navigate(`/game/${currentGame.id}`);
+      }
+    }
+  }, [currentGame, user, navigate]);
 
   const generateGameCode = () => {
     return Math.random().toString(36).substr(2, 8).toUpperCase();
   };
 
-  const fetchGameData = async () => {
-    if (!gameId) return;
+  const ensureGameCode = async () => {
+    if (!gameId || !isHost || gameCode) return gameCode;
     
     try {
-      const { data: game, error } = await supabase
+      const newGameCode = generateGameCode();
+      const { error } = await supabase
         .from('games')
-        .select('*')
-        .eq('id', gameId)
-        .single();
+        .update({ game_code: newGameCode })
+        .eq('id', gameId);
 
       if (error) throw error;
       
-      if (game) {
-        // Generate game code if it doesn't exist
-        let currentGameCode = game.game_code;
-        if (!currentGameCode) {
-          currentGameCode = generateGameCode();
-          await supabase
-            .from('games')
-            .update({ game_code: currentGameCode })
-            .eq('id', gameId);
-        }
-        
-        setGameRoom({
-          id: game.id,
-          name: game.name,
-          host_id: game.host_id,
-          current_players: game.current_players || 1,
-          max_players: game.max_players || 4,
-          status: game.status as 'waiting' | 'active' | 'finished',
-          game_code: currentGameCode,
-          max_rounds: game.max_rounds || 7
-        });
-        setGameCode(currentGameCode);
-        setIsHost(game.host_id === user?.id);
-        setMaxRounds(game.max_rounds || 7);
-        
-        // If game is active, redirect to game screen
-        if (game.status === 'active') {
-          navigate(`/game/${gameId}`);
-        }
-      }
-      
-      await fetchPlayers();
+      setGameCode(newGameCode);
+      return newGameCode;
     } catch (error) {
-      console.error('Error fetching game:', error);
-      toast({
-        title: "Error",
-        description: "Failed to load game data",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchPlayers = async () => {
-    if (!gameId) return;
-    
-    try {
-      const { data: gamePlayers, error } = await supabase
-        .from('game_players')
-        .select(`
-          *,
-          profiles:player_id (username)
-        `)
-        .eq('game_id', gameId)
-        .order('joined_at');
-
-      if (error) throw error;
-      
-      if (gamePlayers) {
-        const playersData = gamePlayers.map(gp => ({
-          id: gp.player_id,
-          username: (gp.profiles as any)?.username || 'Unknown',
-          is_ready: gp.is_ready || false,
-          is_host: gp.player_id === gameRoom?.host_id,
-          joined_at: gp.joined_at || new Date().toISOString()
-        }));
-        
-        setPlayers(playersData);
-        
-        // Set current user's ready status
-        const currentPlayer = playersData.find(p => p.id === user?.id);
-        if (currentPlayer) {
-          setIsReady(currentPlayer.is_ready);
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching players:', error);
-      toast({
-        title: "Error",
-        description: "Failed to load players",
-        variant: "destructive",
-      });
+      console.error('Error generating game code:', error);
+      return null;
     }
   };
 
   const copyGameCode = async () => {
-    if (gameCode) {
-      await navigator.clipboard.writeText(gameCode);
+    const codeToUse = gameCode || await ensureGameCode();
+    if (codeToUse) {
+      await navigator.clipboard.writeText(codeToUse);
       toast({
         title: "Copied!",
         description: "Game code copied to clipboard",
@@ -203,8 +101,9 @@ const GameSetup = () => {
   };
 
   const toggleReady = async () => {
-    if (!user || !gameId) return;
+    if (!user || !gameId || actionLoading) return;
     
+    setActionLoading('ready');
     const newReadyStatus = !isReady;
     
     try {
@@ -221,19 +120,22 @@ const GameSetup = () => {
         title: newReadyStatus ? "Ready!" : "Not Ready",
         description: newReadyStatus ? "You're ready to play!" : "You're no longer ready",
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating ready status:', error);
       toast({
         title: "Error",
-        description: "Failed to update ready status",
+        description: error.message || "Failed to update ready status",
         variant: "destructive",
       });
+    } finally {
+      setActionLoading(null);
     }
   };
 
   const startGame = async () => {
-    if (!isHost || !gameId) return;
+    if (!isHost || !gameId || actionLoading) return;
     
+    setActionLoading('start');
     try {
       // Start the game
       const { error } = await supabase
@@ -255,18 +157,20 @@ const GameSetup = () => {
       });
       
       navigate(`/game/${gameId}`);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error starting game:', error);
       toast({
         title: "Error",
-        description: "Failed to start game",
+        description: error.message || "Failed to start game",
         variant: "destructive",
       });
+    } finally {
+      setActionLoading(null);
     }
   };
 
   const updateMaxRounds = async (rounds: number) => {
-    if (!isHost || !gameId) return;
+    if (!isHost || !gameId || actionLoading) return;
     
     try {
       const { error } = await supabase
@@ -277,19 +181,20 @@ const GameSetup = () => {
       if (error) throw error;
       
       setMaxRounds(rounds);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating max rounds:', error);
       toast({
         title: "Error",
-        description: "Failed to update game settings",
+        description: error.message || "Failed to update game settings",
         variant: "destructive",
       });
     }
   };
 
   const leaveGame = async () => {
-    if (!user || !gameId) return;
+    if (!user || !gameId || actionLoading) return;
     
+    setActionLoading('leave');
     try {
       // Delete player record (trigger will update current_players automatically)
       const { error } = await supabase
@@ -305,34 +210,46 @@ const GameSetup = () => {
         title: "Left Game",
         description: "You have left the game setup",
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error leaving game:', error);
       toast({
         title: "Error",
-        description: "Failed to leave game",
+        description: error.message || "Failed to leave game",
         variant: "destructive",
       });
+    } finally {
+      setActionLoading(null);
     }
   };
 
-  if (loading) {
+  if (loading && !currentGame) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center">
-        <div className="text-white text-xl font-quicksand">Loading game setup...</div>
+        <div className="text-center">
+          <RefreshCw className="h-12 w-12 text-blue-400 animate-spin mx-auto mb-4" />
+          <p className="text-white text-xl font-quicksand">Loading game setup...</p>
+        </div>
       </div>
     );
   }
 
-  if (!gameRoom) {
+  if (error || !currentGame) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center">
-        <div className="text-white text-xl font-quicksand">Game not found</div>
+        <div className="text-center">
+          <AlertTriangle className="h-16 w-16 text-red-400 mx-auto mb-4" />
+          <h2 className="text-white text-2xl font-bangers mb-2">Game Not Found</h2>
+          <p className="text-red-200 font-quicksand mb-4">{error || 'This game may have been deleted or is no longer available.'}</p>
+          <Button onClick={() => navigate('/lobby')} className="bg-blue-600 hover:bg-blue-700">
+            Return to Lobby
+          </Button>
+        </div>
       </div>
     );
   }
 
-  const allPlayersReady = players.length > 1 && players.every(p => p.is_ready || p.is_host);
-  const canStartGame = isHost && players.length >= 2 && (allPlayersReady || isHost);
+  const allPlayersReady = currentGame.players.length > 1 && currentGame.players.every(p => p.is_ready || p.is_host);
+  const canStartGame = isHost && currentGame.players.length >= 2 && (allPlayersReady || isHost);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 p-4 font-quicksand">
@@ -344,18 +261,29 @@ const GameSetup = () => {
           className="flex justify-between items-center mb-8"
         >
           <div>
-            <h1 className="font-bangers text-4xl sm:text-5xl text-white mb-2">{gameRoom.name}</h1>
+            <h1 className="font-bangers text-4xl sm:text-5xl text-white mb-2">{currentGame.name}</h1>
             <p className="text-purple-200 font-quicksand">Game Setup & Player Lobby</p>
           </div>
-          <Button
-            onClick={leaveGame}
-            variant="outline"
-            size="sm"
-            className="border-red-400/60 text-red-300 hover:bg-red-800/50 hover:text-red-200 font-quicksand"
-          >
-            <LogOut className="w-4 h-4 mr-2" />
-            Leave
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={refetch}
+              disabled={loading}
+              size="sm"
+              className="bg-blue-600 hover:bg-blue-700 font-quicksand"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            </Button>
+            <Button
+              onClick={leaveGame}
+              disabled={actionLoading === 'leave'}
+              variant="outline"
+              size="sm"
+              className="border-red-400/60 text-red-300 hover:bg-red-800/50 hover:text-red-200 font-quicksand"
+            >
+              <LogOut className="w-4 h-4 mr-2" />
+              {actionLoading === 'leave' ? 'Leaving...' : 'Leave'}
+            </Button>
+          </div>
         </motion.div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -381,12 +309,13 @@ const GameSetup = () => {
                   <div className="flex items-center gap-3">
                     <div className="bg-yellow-900/30 border border-yellow-500/50 rounded-lg px-4 py-3 flex-1">
                       <div className="font-bangers text-3xl text-yellow-300 text-center tracking-wider">
-                        {gameCode}
+                        {gameCode || 'LOADING...'}
                       </div>
                     </div>
                     <Button
                       onClick={copyGameCode}
                       size="sm"
+                      disabled={!gameCode}
                       className="bg-yellow-600 hover:bg-yellow-700 text-white font-quicksand"
                     >
                       <Copy className="h-4 w-4" />
@@ -421,6 +350,7 @@ const GameSetup = () => {
                           value={maxRounds}
                           onChange={(e) => updateMaxRounds(parseInt(e.target.value))}
                           className="w-full"
+                          disabled={actionLoading !== null}
                         />
                         <div className="flex justify-between text-purple-300 text-sm mt-1 font-quicksand">
                           <span>Quick (3)</span>
@@ -446,14 +376,14 @@ const GameSetup = () => {
                     <div className="text-center">
                       <Button
                         onClick={startGame}
-                        disabled={!canStartGame}
+                        disabled={!canStartGame || actionLoading === 'start'}
                         className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:text-gray-300 text-white font-bangers text-xl px-8 py-4 rounded-xl"
                       >
                         <Play className="h-6 w-6 mr-2" />
-                        START GAME!
+                        {actionLoading === 'start' ? 'STARTING...' : 'START GAME!'}
                       </Button>
                       <p className="text-green-200 text-sm mt-2 font-quicksand">
-                        {players.length < 2 ? 'Need at least 2 players' : 
+                        {currentGame.players.length < 2 ? 'Need at least 2 players' : 
                          !allPlayersReady ? 'Waiting for players to ready up' : 
                          'Ready to start!'}
                       </p>
@@ -462,6 +392,7 @@ const GameSetup = () => {
                     <div className="text-center">
                       <Button
                         onClick={toggleReady}
+                        disabled={actionLoading === 'ready'}
                         className={`font-bangers text-xl px-8 py-4 rounded-xl text-white ${
                           isReady 
                             ? 'bg-green-600 hover:bg-green-700' 
@@ -469,7 +400,8 @@ const GameSetup = () => {
                         }`}
                       >
                         <UserCheck className="h-6 w-6 mr-2" />
-                        {isReady ? 'READY!' : 'NOT READY'}
+                        {actionLoading === 'ready' ? 'UPDATING...' : 
+                         isReady ? 'READY!' : 'NOT READY'}
                       </Button>
                       <p className="text-green-200 text-sm mt-2 font-quicksand">
                         {isReady ? 'Waiting for host to start...' : 'Click to ready up!'}
@@ -491,12 +423,12 @@ const GameSetup = () => {
               <CardHeader>
                 <CardTitle className="font-bangers text-white flex items-center gap-2 text-2xl">
                   <Users className="h-5 w-5" />
-                  Players ({players.length}/{gameRoom.max_players})
+                  Players ({currentGame.current_players}/{currentGame.max_players})
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {players.map((player, index) => (
+                  {currentGame.players.map((player, index) => (
                     <motion.div
                       key={player.id}
                       initial={{ opacity: 0, y: 10 }}
@@ -543,7 +475,7 @@ const GameSetup = () => {
                   ))}
                   
                   {/* Empty slots */}
-                  {Array.from({ length: gameRoom.max_players - players.length }).map((_, index) => (
+                  {Array.from({ length: currentGame.max_players - currentGame.players.length }).map((_, index) => (
                     <div
                       key={`empty-${index}`}
                       className="flex items-center justify-between p-4 bg-gray-900/20 rounded-lg border border-gray-500/30 opacity-50"

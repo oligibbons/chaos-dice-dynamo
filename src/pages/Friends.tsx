@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Users, UserPlus, MessageSquare, Gamepad2, Search, Crown, UserMinus, RefreshCw } from "lucide-react";
+import { Users, UserPlus, MessageSquare, Gamepad2, Search, Crown, UserMinus, RefreshCw, AlertTriangle } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -30,8 +30,10 @@ const Friends = () => {
   const [friends, setFriends] = useState<Friend[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [friendRequests, setFriendRequests] = useState<any[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -43,6 +45,8 @@ const Friends = () => {
 
   const fetchFriends = async () => {
     try {
+      setLoading(true);
+      setError(null);
       console.log('Fetching friends...');
       
       const { data, error } = await supabase
@@ -67,35 +71,44 @@ const Friends = () => {
       const friendsList: Friend[] = [];
       
       for (const friendship of data || []) {
-        const friendId = friendship.requester_id === user!.id ? friendship.addressee_id : friendship.requester_id;
-        
-        const { data: profileData, error: profileError } = await supabase
-          .from('profiles')
-          .select('id, username')
-          .eq('id', friendId)
-          .single();
+        try {
+          const friendId = friendship.requester_id === user!.id ? friendship.addressee_id : friendship.requester_id;
+          
+          const { data: profileData, error: profileError } = await supabase
+            .from('profiles')
+            .select('id, username')
+            .eq('id', friendId)
+            .single();
 
-        if (profileError) {
-          console.error('Profile fetch error:', profileError);
-          continue;
+          if (profileError) {
+            console.error('Profile fetch error:', profileError);
+            continue;
+          }
+
+          if (profileData) {
+            friendsList.push({
+              id: profileData.id,
+              username: profileData.username || 'Unknown User',
+              status: 'offline' as const,
+              friendshipId: friendship.id
+            });
+          }
+        } catch (error) {
+          console.error('Error processing friendship:', error);
         }
-
-        friendsList.push({
-          id: profileData.id,
-          username: profileData.username || 'Unknown User',
-          status: 'offline' as const,
-          friendshipId: friendship.id
-        });
       }
 
       setFriends(friendsList);
     } catch (error: any) {
       console.error('Error fetching friends:', error);
+      setError(error.message || 'Failed to load friends');
       toast({
         title: "Error",
         description: "Failed to load friends",
         variant: "destructive",
       });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -118,17 +131,21 @@ const Friends = () => {
       const requestsWithProfiles = [];
       
       for (const request of data || []) {
-        const { data: profileData, error: profileError } = await supabase
-          .from('profiles')
-          .select('id, username')
-          .eq('id', request.requester_id)
-          .single();
+        try {
+          const { data: profileData, error: profileError } = await supabase
+            .from('profiles')
+            .select('id, username')
+            .eq('id', request.requester_id)
+            .single();
 
-        if (!profileError && profileData) {
-          requestsWithProfiles.push({
-            ...request,
-            profiles: profileData
-          });
+          if (!profileError && profileData) {
+            requestsWithProfiles.push({
+              ...request,
+              profiles: profileData
+            });
+          }
+        } catch (error) {
+          console.error('Error processing friend request:', error);
         }
       }
 
@@ -146,10 +163,20 @@ const Friends = () => {
         schema: 'public',
         table: 'friends'
       }, () => {
+        console.log('Friends change detected, refreshing...');
         fetchFriends();
         fetchFriendRequests();
       })
-      .subscribe();
+      .subscribe((status) => {
+        console.log('Friends subscription status:', status);
+        if (status === 'CHANNEL_ERROR') {
+          console.error('Friends subscription failed, retrying...');
+          setTimeout(() => {
+            fetchFriends();
+            fetchFriendRequests();
+          }, 2000);
+        }
+      });
 
     return () => {
       supabase.removeChannel(channel);
@@ -162,7 +189,7 @@ const Friends = () => {
       return;
     }
 
-    setLoading(true);
+    setSearchLoading(true);
     try {
       // Get existing friend relationships to filter out
       const { data: existingFriends } = await supabase
@@ -199,7 +226,7 @@ const Friends = () => {
         variant: "destructive",
       });
     } finally {
-      setLoading(false);
+      setSearchLoading(false);
     }
   };
 
@@ -264,6 +291,11 @@ const Friends = () => {
     }
   };
 
+  const refreshData = () => {
+    fetchFriends();
+    fetchFriendRequests();
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 p-4 font-quicksand">
       <div className="max-w-4xl mx-auto">
@@ -278,16 +310,42 @@ const Friends = () => {
             <h1 className="font-bangers text-5xl text-white">Friends</h1>
           </div>
           <Button
-            onClick={() => {
-              fetchFriends();
-              fetchFriendRequests();
-            }}
+            onClick={refreshData}
+            disabled={loading}
             className="bg-blue-600 hover:bg-blue-700 font-quicksand font-semibold"
           >
-            <RefreshCw className="h-4 w-4 mr-2" />
+            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
         </motion.div>
+
+        {/* Error Display */}
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6"
+          >
+            <Card className="bg-red-900/50 border-red-500/50 backdrop-blur-sm">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <AlertTriangle className="h-5 w-5 text-red-400" />
+                  <div>
+                    <p className="text-red-200 font-quicksand font-medium">Error loading friends</p>
+                    <p className="text-red-300 text-sm font-quicksand">{error}</p>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={refreshData}
+                    className="ml-auto bg-red-600 hover:bg-red-700"
+                  >
+                    Retry
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
 
         {/* Friend Requests */}
         {friendRequests.length > 0 && (
@@ -360,9 +418,9 @@ const Friends = () => {
                 <Button 
                   onClick={searchUsers} 
                   className="bg-blue-600 hover:bg-blue-700 font-quicksand font-semibold"
-                  disabled={loading || !searchQuery.trim()}
+                  disabled={searchLoading || !searchQuery.trim()}
                 >
-                  {loading ? 'Searching...' : 'Search'}
+                  {searchLoading ? 'Searching...' : 'Search'}
                 </Button>
               </div>
 
@@ -410,7 +468,12 @@ const Friends = () => {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {friends.length === 0 ? (
+              {loading && friends.length === 0 ? (
+                <div className="text-center py-8">
+                  <RefreshCw className="h-12 w-12 text-blue-400 animate-spin mx-auto mb-4" />
+                  <p className="text-blue-200 text-lg font-quicksand">Loading friends...</p>
+                </div>
+              ) : friends.length === 0 ? (
                 <div className="text-center py-8">
                   <Users className="h-16 w-16 text-blue-400 mx-auto mb-4 opacity-50" />
                   <p className="text-blue-200 text-lg mb-2 font-quicksand">No friends yet</p>

@@ -5,167 +5,33 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Gamepad2, Users, Plus, Search, Clock, Crown, RefreshCw } from "lucide-react";
+import { Gamepad2, Users, Plus, Search, Clock, Crown, RefreshCw, AlertTriangle } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-
-interface Game {
-  id: string;
-  name: string;
-  host_id: string;
-  current_players: number;
-  max_players: number;
-  status: string;
-  created_at: string;
-  is_private: boolean;
-  game_code?: string;
-}
-
-interface GameWithPlayers extends Game {
-  players: Array<{
-    id: string;
-    username: string;
-    is_ready: boolean;
-  }>;
-}
+import { useGameData } from "@/hooks/useGameData";
 
 const Lobby = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
-  const [games, setGames] = useState<GameWithPlayers[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { games, loading, error, setupRealtimeSubscription, refetch } = useGameData();
+  
   const [searchQuery, setSearchQuery] = useState('');
   const [showCreateGame, setShowCreateGame] = useState(false);
   const [newGameName, setNewGameName] = useState('');
   const [isPrivateGame, setIsPrivateGame] = useState(false);
+  const [createLoading, setCreateLoading] = useState(false);
+  const [joinLoading, setJoinLoading] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
-      fetchGames();
-      setupRealtimeSubscription();
+      const cleanup = setupRealtimeSubscription();
+      return cleanup;
     }
-  }, [user]);
-
-  const fetchGames = async () => {
-    try {
-      setLoading(true);
-      console.log('Fetching games...');
-      
-      // First get all games
-      const { data: gamesData, error: gamesError } = await supabase
-        .from('games')
-        .select('*')
-        .eq('status', 'waiting')
-        .order('created_at', { ascending: false });
-
-      if (gamesError) {
-        console.error('Games error:', gamesError);
-        throw gamesError;
-      }
-
-      console.log('Games fetched:', gamesData);
-
-      if (!gamesData || gamesData.length === 0) {
-        setGames([]);
-        return;
-      }
-
-      // Then get players for each game
-      const gamesWithPlayers = await Promise.all(
-        gamesData.map(async (game) => {
-          try {
-            const { data: playersData, error: playersError } = await supabase
-              .from('game_players')
-              .select(`
-                id,
-                is_ready,
-                player_id
-              `)
-              .eq('game_id', game.id);
-
-            if (playersError) {
-              console.error(`Players error for game ${game.id}:`, playersError);
-              return {
-                ...game,
-                players: []
-              };
-            }
-
-            // Now fetch profile data for each player
-            const players = [];
-            
-            for (const player of playersData || []) {
-              const { data: profileData, error: profileError } = await supabase
-                .from('profiles')
-                .select('id, username')
-                .eq('id', player.player_id)
-                .single();
-
-              if (!profileError && profileData) {
-                players.push({
-                  id: profileData.id,
-                  username: profileData.username || 'Unknown Player',
-                  is_ready: player.is_ready || false
-                });
-              }
-            }
-
-            return {
-              ...game,
-              players
-            };
-          } catch (error) {
-            console.error(`Error fetching players for game ${game.id}:`, error);
-            return {
-              ...game,
-              players: []
-            };
-          }
-        })
-      );
-
-      setGames(gamesWithPlayers);
-    } catch (error: any) {
-      console.error('Error fetching games:', error);
-      toast({
-        title: "Error",
-        description: "Failed to load games. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const setupRealtimeSubscription = () => {
-    const channel = supabase
-      .channel('lobby-changes')
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'games'
-      }, () => {
-        console.log('Game change detected, refreshing...');
-        fetchGames();
-      })
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'game_players'
-      }, () => {
-        console.log('Player change detected, refreshing...');
-        fetchGames();
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  };
+  }, [user, setupRealtimeSubscription]);
 
   const createGame = async () => {
     if (!newGameName.trim()) {
@@ -177,31 +43,41 @@ const Lobby = () => {
       return;
     }
 
+    if (!user) {
+      toast({
+        title: "Error",
+        description: "You must be logged in to create a game",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setCreateLoading(true);
     try {
-      const gameCode = isPrivateGame ? Math.random().toString(36).substr(2, 6).toUpperCase() : null;
+      const gameCode = Math.random().toString(36).substr(2, 8).toUpperCase();
       
-      const { data, error } = await supabase
+      const { data: game, error: gameError } = await supabase
         .from('games')
         .insert({
           name: newGameName,
-          host_id: user!.id,
+          host_id: user.id,
           is_private: isPrivateGame,
           game_code: gameCode,
           status: 'waiting',
-          current_players: 1,
+          current_players: 0, // Will be updated by trigger
           max_players: 4
         })
         .select()
         .single();
 
-      if (error) throw error;
+      if (gameError) throw gameError;
 
       // Add the host as the first player
       const { error: playerError } = await supabase
         .from('game_players')
         .insert({
-          game_id: data.id,
-          player_id: user!.id,
+          game_id: game.id,
+          player_id: user.id,
           turn_order: 0,
           is_ready: false
         });
@@ -210,21 +86,35 @@ const Lobby = () => {
 
       toast({
         title: "Game Created!",
-        description: `Game "${newGameName}" has been created${gameCode ? ` with code: ${gameCode}` : ''}`,
+        description: `Game "${newGameName}" has been created with code: ${gameCode}`,
       });
 
-      navigate(`/game/${data.id}/setup`);
+      setNewGameName('');
+      setShowCreateGame(false);
+      navigate(`/game/${game.id}/setup`);
     } catch (error: any) {
       console.error('Error creating game:', error);
       toast({
         title: "Error",
-        description: "Failed to create game. Please try again.",
+        description: error.message || "Failed to create game. Please try again.",
         variant: "destructive",
       });
+    } finally {
+      setCreateLoading(false);
     }
   };
 
   const joinGame = async (gameId: string) => {
+    if (!user) {
+      toast({
+        title: "Error",
+        description: "You must be logged in to join a game",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setJoinLoading(gameId);
     try {
       console.log('Joining game:', gameId);
       
@@ -233,23 +123,34 @@ const Lobby = () => {
         .from('game_players')
         .select('id')
         .eq('game_id', gameId)
-        .eq('player_id', user!.id)
-        .single();
+        .eq('player_id', user.id)
+        .maybeSingle();
 
       if (existingPlayer) {
         navigate(`/game/${gameId}/setup`);
         return;
       }
 
-      // Get current player count
-      const { data: game } = await supabase
+      // Get current game info
+      const { data: game, error: gameError } = await supabase
         .from('games')
-        .select('current_players, max_players')
+        .select('current_players, max_players, status')
         .eq('id', gameId)
         .single();
 
+      if (gameError) throw gameError;
+      
       if (!game) {
         throw new Error('Game not found');
+      }
+
+      if (game.status !== 'waiting') {
+        toast({
+          title: "Game Unavailable",
+          description: "This game is no longer accepting players",
+          variant: "destructive",
+        });
+        return;
       }
 
       if (game.current_players >= game.max_players) {
@@ -262,16 +163,16 @@ const Lobby = () => {
       }
 
       // Add player to game
-      const { error } = await supabase
+      const { error: joinError } = await supabase
         .from('game_players')
         .insert({
           game_id: gameId,
-          player_id: user!.id,
+          player_id: user.id,
           turn_order: game.current_players,
           is_ready: false
         });
 
-      if (error) throw error;
+      if (joinError) throw joinError;
 
       toast({
         title: "Joined Game!",
@@ -283,9 +184,11 @@ const Lobby = () => {
       console.error('Error joining game:', error);
       toast({
         title: "Error",
-        description: "Failed to join game. Please try again.",
+        description: error.message || "Failed to join game. Please try again.",
         variant: "destructive",
       });
+    } finally {
+      setJoinLoading(null);
     }
   };
 
@@ -293,7 +196,7 @@ const Lobby = () => {
     game.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  if (loading) {
+  if (loading && games.length === 0) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 p-4 font-quicksand flex items-center justify-center">
         <div className="text-center">
@@ -319,10 +222,11 @@ const Lobby = () => {
           </div>
           <div className="flex items-center gap-4">
             <Button
-              onClick={() => fetchGames()}
+              onClick={refetch}
+              disabled={loading}
               className="bg-blue-600 hover:bg-blue-700 font-quicksand font-semibold"
             >
-              <RefreshCw className="h-4 w-4 mr-2" />
+              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
               Refresh
             </Button>
             <Button
@@ -334,6 +238,34 @@ const Lobby = () => {
             </Button>
           </div>
         </motion.div>
+
+        {/* Error Display */}
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6"
+          >
+            <Card className="bg-red-900/50 border-red-500/50 backdrop-blur-sm">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <AlertTriangle className="h-5 w-5 text-red-400" />
+                  <div>
+                    <p className="text-red-200 font-quicksand font-medium">Error loading games</p>
+                    <p className="text-red-300 text-sm font-quicksand">{error}</p>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={refetch}
+                    className="ml-auto bg-red-600 hover:bg-red-700"
+                  >
+                    Retry
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
 
         {/* Create Game Form */}
         {showCreateGame && (
@@ -353,6 +285,7 @@ const Lobby = () => {
                   value={newGameName}
                   onChange={(e) => setNewGameName(e.target.value)}
                   className="bg-green-900/30 border-green-500/50 text-white font-quicksand"
+                  disabled={createLoading}
                 />
                 <div className="flex items-center gap-4">
                   <label className="flex items-center gap-2 text-white font-quicksand">
@@ -361,14 +294,16 @@ const Lobby = () => {
                       checked={isPrivateGame}
                       onChange={(e) => setIsPrivateGame(e.target.checked)}
                       className="rounded"
+                      disabled={createLoading}
                     />
                     Private Game
                   </label>
                   <Button
                     onClick={createGame}
+                    disabled={createLoading || !newGameName.trim()}
                     className="bg-green-600 hover:bg-green-700 font-quicksand font-semibold"
                   >
-                    Create Game
+                    {createLoading ? 'Creating...' : 'Create Game'}
                   </Button>
                 </div>
               </CardContent>
@@ -404,7 +339,9 @@ const Lobby = () => {
           {filteredGames.length === 0 ? (
             <div className="col-span-full text-center py-12">
               <Gamepad2 className="h-16 w-16 text-blue-400 mx-auto mb-4 opacity-50" />
-              <p className="text-blue-200 text-lg mb-2 font-quicksand">No games available</p>
+              <p className="text-blue-200 text-lg mb-2 font-quicksand">
+                {error ? 'Unable to load games' : 'No games available'}
+              </p>
               <p className="text-blue-300 font-quicksand">Create a new game to get started!</p>
             </div>
           ) : (
@@ -447,7 +384,7 @@ const Lobby = () => {
                         <h4 className="text-white font-quicksand font-medium text-sm">Players:</h4>
                         {game.players.length > 0 ? (
                           <div className="flex flex-wrap gap-2">
-                            {game.players.map((player, playerIndex) => (
+                            {game.players.map((player) => (
                               <div key={player.id} className="flex items-center gap-2 bg-blue-900/30 rounded-lg px-2 py-1">
                                 <Avatar className="h-6 w-6">
                                   <AvatarFallback className="bg-gradient-to-r from-blue-500 to-purple-500 text-white font-bangers text-xs">
@@ -455,21 +392,23 @@ const Lobby = () => {
                                   </AvatarFallback>
                                 </Avatar>
                                 <span className="text-white text-xs font-quicksand">{player.username}</span>
-                                {playerIndex === 0 && <Crown className="h-3 w-3 text-yellow-400" />}
+                                {player.is_host && <Crown className="h-3 w-3 text-yellow-400" />}
                               </div>
                             ))}
                           </div>
                         ) : (
-                          <p className="text-blue-300 text-sm font-quicksand">No players loaded</p>
+                          <p className="text-blue-300 text-sm font-quicksand">Loading players...</p>
                         )}
                       </div>
 
                       <Button
                         onClick={() => joinGame(game.id)}
+                        disabled={game.current_players >= game.max_players || joinLoading === game.id}
                         className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 font-quicksand font-semibold"
-                        disabled={game.current_players >= game.max_players}
                       >
-                        {game.current_players >= game.max_players ? 'Game Full' : 'Join Game'}
+                        {joinLoading === game.id ? 'Joining...' : 
+                         game.current_players >= game.max_players ? 'Game Full' : 
+                         'Join Game'}
                       </Button>
                     </div>
                   </CardContent>
