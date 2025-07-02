@@ -21,6 +21,7 @@ interface Game {
   created_at: string;
   is_private: boolean;
   game_code?: string;
+  max_rounds: number;
 }
 
 interface GameWithPlayers extends Game {
